@@ -1,16 +1,16 @@
 from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UserBase(BaseModel):
     """
     Common attributes while creating or reading data.
     """
-    username: str
-    first_name: str
-    last_name: str
-    email: str
+    username: str = Field(max_length=30)
+    first_name: str = Field(max_length=50)
+    last_name: str = Field(max_length=50)
+    email: str = Field()
 
 
 class UserCreate(UserBase):
@@ -19,11 +19,11 @@ class UserCreate(UserBase):
     """
     username: str
     first_name: str
-    last_name: str
-    password: str
+    last_name: str | None
+    password: str = Field(min_length=10)
     email: str
     date_of_birth: date
-    role: str = 'regular-user'
+    role: str = Field(default='regular-user')
 
 
 class User(UserBase):
@@ -33,9 +33,10 @@ class User(UserBase):
     id: int
     username: str
     first_name: str
-    last_name: str
+    last_name: str | None
+    email: str
     role: str
-    is_active: bool
+    is_active: bool = Field(default=True)
 
     class Config:
         """
@@ -43,3 +44,30 @@ class User(UserBase):
         but an ORM model (or any other arbitrary object with attributes).
         """
         from_attributes = True
+
+
+class UserUpdate(UserBase):
+    """
+    Info for update.
+    """
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    hashed_password: str | None = None
+    date_of_birth: date | None = None
+
+
+class Token(BaseModel):
+    """
+    Define data types for token.
+    """
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    """
+    Data for get user from passed token.
+    """
+    username: str | None = None
