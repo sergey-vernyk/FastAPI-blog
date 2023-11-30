@@ -1,42 +1,33 @@
 from datetime import date
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
-class UserBase(BaseModel):
+class UserCreate(BaseModel):
     """
-    Common attributes while creating or reading data.
+    Data (attributes) needed for creation user.
     """
     username: str = Field(max_length=30)
     first_name: str = Field(max_length=50)
-    last_name: str = Field(max_length=50)
-    email: str = Field()
-
-
-class UserCreate(UserBase):
-    """
-    Additional data (attributes) needed for creation user.
-    """
-    username: str
-    first_name: str
-    last_name: str | None
-    password: str = Field(min_length=10)
+    last_name: Optional[str] = Field(max_length=50, default=None)
     email: str
-    date_of_birth: date
+    password: str = Field(min_length=10)
+    date_of_birth: Optional[date] = None
     role: str = Field(default='regular-user')
 
 
-class User(UserBase):
+class UserShow(BaseModel):
     """
     Information which displays while obtaining user.
     """
     id: int
-    username: str
-    first_name: str
-    last_name: str | None
-    email: str
+    username: str = Field(max_length=30)
+    first_name: str = Field(max_length=50)
+    last_name: Optional[str]
+    email: str = Field()
     role: str
-    is_active: bool = Field(default=True)
+    is_active: bool
 
     class Config:
         """
@@ -46,16 +37,17 @@ class User(UserBase):
         from_attributes = True
 
 
-class UserUpdate(UserBase):
+class UserUpdate(BaseModel):
     """
     Info for update.
     """
-    username: str | None = None
-    first_name: str | None = None
-    last_name: str | None = None
-    email: str | None = None
-    hashed_password: str | None = None
-    date_of_birth: date | None = None
+    username: Optional[str] = Field(max_length=30, default=None)
+    first_name: Optional [str] = Field(max_length=50, default=None)
+    last_name: Optional [str] = Field(max_length=50, default=None)
+    email: Optional [str] = Field(default='example@example.com')
+    hashed_password: Optional [str] = Field(min_length=10, default=None)
+    date_of_birth: Optional [date] = Field(default='yyy-mm-dd')
+    is_active: Optional[bool] = Field(default=True)
 
 
 class Token(BaseModel):

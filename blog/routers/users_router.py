@@ -4,76 +4,71 @@ from typing import Annotated, Type, Union
 from fastapi import APIRouter, status, HTTPException, Depends
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import OAuth2PasswordRequestForm
-from jose import jwt
 from sqlalchemy.orm import Session
 
 from accounts import schemas, models, crud
 from accounts.models import User
 from accounts.schemas import Token
-from accounts.security import verify_password, create_access_token
+from accounts.security import verify_password, create_access_token, get_token_data
 from config import Settings
 from dependencies import get_current_user, get_db, oauth2_scheme
 
 router = APIRouter()
 settings = Settings()
+permission_exception = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail='Only admin users be able to perform this action'
+)
 
 
-@router.post('/users/',
-             response_model=schemas.User,
+@router.post('/users/create',
+             response_model=schemas.UserCreate,
              status_code=status.HTTP_201_CREATED,
              summary='Create user')
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)) -> User:
+async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)) -> User:
     """
     Create user in database.
     """
     # try to get user by its email
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
-        raise HTTPException(status_code=400, detail='Email already registered')
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail='Email already registered')
     return crud.create_user(db=db, user=user)
 
 
 @router.get('/users/',
-            response_model=list[schemas.User],
+            response_model=list[schemas.UserShow],
             status_code=status.HTTP_200_OK,
             summary='Get all users in the database')
-def read_users(token: Annotated[str, Depends(oauth2_scheme)],
-               db: Session = Depends(get_db),
-               skip: int = 0,
-               limit: int = 100) -> list[Type[models.User]]:
+async def read_users(token: Annotated[str, Depends(oauth2_scheme)],
+                     db: Session = Depends(get_db),
+                     skip: int = 0,
+                     limit: int = 100) -> list[Type[models.User] | HTTPException]:
     """
     Obtain all users from database with `limit` and `skip`.
     """
-    payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-    username: str = payload.get('sub')
-    print(username)
+    token_data = get_token_data(token)
+    user = crud.get_user_by_username(db, token_data.username)
+    if user.role != 'admin':
+        raise permission_exception
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
 
 
 @router.get('/users/{user_id}',
-            response_model=schemas.User,
+            response_model=schemas.UserShow,
             status_code=status.HTTP_200_OK,
             summary='Get user by passed `user_id`')
-def read_user_by_id(user_id: int, db: Session = Depends(get_db)) -> Type[User]:
+async def read_user_by_id(current_user: Annotated[User, Depends(get_current_user)],
+                          user_id: int,
+                          db: Session = Depends(get_db)) -> Type[User] | HTTPException:
     """
     Obtain user by its `user_id`.
     """
+    if current_user.role != 'admin':
+        raise permission_exception
     user = crud.get_user_by_id(db, user_id=user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404, detail='User not found')
-    return user
-
-
-@router.get('/users/{username}',
-            response_model=schemas.User,
-            status_code=status.HTTP_200_OK,
-            summary='Get user by passed `username`')
-def read_user_by_username(username: str, db: Session = Depends(get_db)) -> Type[User]:
-    """
-    Obtain user by its `username`.
-    """
-    user = crud.get_user_by_username(db, username=username)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404, detail='User not found')
     return user
@@ -86,7 +81,7 @@ def authenticate_user(username: str,
     Returns user if it can be able to authenticated with passed `username` and `password`,
     raise an exception otherwise.
     """
-    user = read_user_by_username(username, db)
+    user = crud.get_user_by_username(db, username)
     if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -119,8 +114,8 @@ async def login_for_token(form_data: Annotated[OAuth2PasswordRequestForm, Depend
     return {'access_token': access_token, 'token_type': 'bearer'}
 
 
-@router.get('/users/me/',
-            response_model=schemas.User,
+@router.get('/users/me',
+            response_model=schemas.UserShow,
             status_code=status.HTTP_200_OK,
             summary='Get info about current user')
 async def read_users_me(current_user: Annotated[User, Depends(get_current_user)]) -> User:

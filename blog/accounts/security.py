@@ -4,6 +4,7 @@ from typing import Union
 from jose import jwt
 from passlib.context import CryptContext
 
+from blog.accounts.schemas import TokenData
 from config import Settings
 
 settings = Settings()
@@ -28,7 +29,7 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None) -> str:
     """
-    Returns generated access token.
+    Returns generated jwt access token.
     """
     to_encode = data.copy()
     if expires_delta:
@@ -38,3 +39,15 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     to_encode.update({'exp': expire})
     encoded_jwt = jwt.encode(claims=to_encode, key=settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt
+
+
+def get_token_data(token: str) -> TokenData:
+    """
+    Obtain token data from passed `token` and return the data.
+    """
+    jwt_decode = jwt.decode(token=token,
+                            key=settings.secret_key,
+                            algorithms=[settings.algorithm])
+    username = jwt_decode.get('sub')  # get username from `sub`
+    token_data = TokenData(username=username)
+    return token_data

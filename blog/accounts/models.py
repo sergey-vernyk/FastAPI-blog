@@ -1,5 +1,6 @@
 from sqlalchemy import Boolean, Column, Integer, String, Date
 from sqlalchemy import types
+from sqlalchemy.orm import relationship
 
 from db_connection import Base
 
@@ -29,7 +30,7 @@ class User(Base):
     __tablename__ = 'users'  # table's name in database
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column('username', String(30), nullable=False)
+    username = Column('username', String(30), nullable=False, unique=True)
     role = Column('role', ChoiceType(
         {
             'admin': 'admin',
@@ -43,3 +44,7 @@ class User(Base):
     email = Column('email', String, unique=True, index=True, nullable=False)
     hashed_password = Column(String)
     is_active = Column('is_active', Boolean, default=True)
+    posts = relationship('Post', back_populates='owner')
+
+    def __repr__(self):
+        return f'User `{self.username}`'

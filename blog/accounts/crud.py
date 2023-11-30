@@ -6,28 +6,28 @@ from . import models, schemas, security
 from .models import User
 
 
-def get_user_by_email(db: Session, email: str) -> Type[models.User] | None:
+def get_user_by_email(db: Session, email: str) -> User | None:
     """
     Obtain user by its `email` address.
     """
     return db.query(models.User).filter(models.User.email == email).first()
 
 
-def get_users(db: Session, skip: int = 0, limit: int = 100) -> list[Type[models.User]]:
+def get_users(db: Session, skip: int = 0, limit: int = 100) -> list[Type[User]]:
     """
     Obtain users from db with `limit` and offset `skip`.
     """
     return db.query(models.User).offset(skip).limit(limit).all()
 
 
-def get_user_by_id(db: Session, user_id: int) -> Type[models.User] | None:
+def get_user_by_id(db: Session, user_id: int) -> User | None:
     """
     Obtain user by its `user_id`
     """
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 
-def get_user_by_username(db: Session, username: str) -> Type[models.User] | None:
+def get_user_by_username(db: Session, username: str) -> User | None:
     """
     Obtain user by its `username`.
     """
