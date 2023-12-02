@@ -52,3 +52,17 @@ class PostUpdate(PostCreate):
     """
     is_publish: bool = Field(default=False)
     rating: int = Field(ge=0, lt=6)
+
+
+class UserPostsShow(BaseModel):
+    """
+    Posts which has been written behalf user.
+    """
+    id: int
+    title: str
+    tags: str
+    category: CategoryCreate
+    rating: int = Field(ge=0, lt=6, default=0)
+    is_publish: bool
+    created: datetime
+    updated: datetime

@@ -11,13 +11,13 @@ from posts import schemas, models, crud
 router = APIRouter()
 
 
-@router.post('/posts/create',
+@router.post('/create',
              response_model=schemas.PostShow,
              status_code=status.HTTP_201_CREATED,
              summary='Create post')
 async def create_post(current_user: Annotated[User, Depends(get_current_user)],
                       post: schemas.PostCreate,
-                      db: Session = Depends(get_db)) -> models.Post:
+                      db: Session = Depends(get_db)) -> models.Post | HTTPException:
     """
     Create `post` behalf `current_user`.
     """
@@ -31,13 +31,13 @@ async def create_post(current_user: Annotated[User, Depends(get_current_user)],
     return crud.create_post(db, post, current_user)
 
 
-@router.post('/post-category/create',
+@router.post('/category/create',
              response_model=schemas.CategoryCreate,
              status_code=status.HTTP_201_CREATED,
              summary='Create post category')
 async def create_category(current_user: Annotated[User, Depends(get_current_user)],
                           category: schemas.CategoryCreate,
-                          db: Session = Depends(get_db)) -> models.Category:
+                          db: Session = Depends(get_db)) -> models.Category | HTTPException:
     """
     Create post's `category`.
     """
@@ -50,16 +50,16 @@ async def create_category(current_user: Annotated[User, Depends(get_current_user
     return crud.create_category(db, category, current_user)
 
 
-@router.put('/posts/update/{post_id}',
-            response_model=schemas.PostUpdate,
+@router.put('/update/{post_id}',
+            response_model=schemas.PostShow,
             status_code=status.HTTP_200_OK,
             summary='Update post by `post_id`')
 def update_post(post_id: int,
                 data: schemas.PostUpdate,
                 current_user: Annotated[User, Depends(get_current_user)],
-                db: Session = Depends(get_db)) -> models.Post:
+                db: Session = Depends(get_db)) -> models.Post | HTTPException:
     """
-    Update post data.
+    Update post's data.
     """
     db_post = crud.get_post_by_id(db, post_id)
     if not db_post:
@@ -67,7 +67,15 @@ def update_post(post_id: int,
             status_code=status.HTTP_204_NO_CONTENT,
             detail='Post with passed id does not exists'
         )
-    # current_post_data = jsonable_encoder(db_post)
-    data_to_update = data.model_dump(exclude={'id'})
+    if current_user.role != 'admin' or db_post.id != post_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='Post can be updated only by admin or by its owner'
+        )
+    data_to_update = data.model_dump(exclude={'id', 'category'})
+    data_to_update.update({
+        'category_id': db_post.category.id,
+        'tags': ','.join(data_to_update['tags'])}
+    )
     post_data_dict = jsonable_encoder(data_to_update)
-    return crud.update_post(db, db_post, current_user, post_data_dict)
+    return crud.update_post(db, db_post, post_data_dict)

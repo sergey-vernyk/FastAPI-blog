@@ -3,9 +3,8 @@ from typing import Union
 
 from jose import jwt
 from passlib.context import CryptContext
-
-from blog.accounts.schemas import TokenData
 from config import Settings
+from blog.accounts.schemas import TokenData
 
 settings = Settings()
 

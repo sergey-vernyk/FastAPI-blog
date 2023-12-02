@@ -27,7 +27,7 @@ class Post(Base):
     updated = Column('updated', DateTime, default=datetime.utcnow, onupdate=datetime.now)
 
     def __repr__(self):
-        return f'`{self.tag}`:`{self.title[:50]}`, owner:`{self.owner}`'
+        return f'Post:`{self.title[:50]}`, owner:`{self.owner}`'
 
 
 class Category(Base):

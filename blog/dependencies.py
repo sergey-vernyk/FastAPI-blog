@@ -1,4 +1,4 @@
-from typing import Annotated, Type
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -6,13 +6,13 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from accounts import models, crud
-from accounts.schemas import TokenData, UserShow
+from accounts.schemas import TokenData
 from config import Settings
 from db_connection import SessionLocal
 
 settings = Settings()
 # for authentication using Bearer Token obtained with a password
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='token')
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/users/token')
 
 
 def get_db():
@@ -20,16 +20,15 @@ def get_db():
     Dependency will create a new SQLAlchemy `SessionLocal`
     that will be used in a single request, and then close it once the request is finished.
     """
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         yield db
-    finally:
-        # make sure the database session is always closed after the request
-        db.close()
+
+
+DatabaseDependency = Annotated[Session, Depends(get_db)]
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)],
-                           db: Session = Depends(get_db)) -> Type[models.User]:
+                           db: Session = Depends(get_db)) -> models.User:
     """
     Obtain current user by passed `token`. Used as dependency.
     """
@@ -53,8 +52,11 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)],
     return user
 
 
+CurrentUserDependency = Annotated[models.User, Depends(get_current_user)]
+
+
 def get_user_by_username(username: str,
-                         db: Session = Depends(get_db)) -> Type[UserShow]:
+                         db: Session = Depends(get_db)) -> models.User:
     """
     Obtain user by its `username`.
     """

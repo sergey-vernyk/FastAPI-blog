@@ -1,3 +1,5 @@
+from typing import Union
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -6,21 +8,21 @@ from . import models, schemas
 from .models import Post, Category
 
 
-def get_post_by_title(db: Session, post_title: str) -> Post | None:
+def get_post_by_title(db: Session, post_title: str) -> Union[Post, None]:
     """
     Get post by its `post_title`.
     """
     return db.query(models.Post).filter(models.Post.title == post_title).first()
 
 
-def get_post_by_id(db: Session, post_id: int) -> Post | None:
+def get_post_by_id(db: Session, post_id: int) -> Union[Post, None]:
     """
     Get post by its `post_id`.
     """
     return db.query(models.Post).get(ident=post_id)
 
 
-def get_category_by_name(db: Session, name: str) -> Category | None:
+def get_category_by_name(db: Session, name: str) -> Union[Category, None]:
     """
     Get category by its name.
     """
@@ -29,7 +31,7 @@ def get_category_by_name(db: Session, name: str) -> Category | None:
 
 def create_post(db: Session,
                 post: schemas.PostCreate,
-                user: user_schemas.UserShow) -> Post:
+                user: user_schemas.UserShow) -> Union[HTTPException, Post]:
     """
     Create post by passed parameters.
     """
@@ -69,10 +71,7 @@ def create_category(db: Session,
     return category
 
 
-def update_post(db: Session,
-                post: Post,
-                user: user_schemas.UserUpdate,
-                data_to_update: dict) -> Post:
+def update_post(db: Session, post: Post, data_to_update: dict) -> Post:
     """
     Update post with passed parameters.
     """

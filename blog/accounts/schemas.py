@@ -42,12 +42,21 @@ class UserUpdate(BaseModel):
     Info for update.
     """
     username: Optional[str] = Field(max_length=30, default=None)
-    first_name: Optional [str] = Field(max_length=50, default=None)
-    last_name: Optional [str] = Field(max_length=50, default=None)
-    email: Optional [str] = Field(default='example@example.com')
-    hashed_password: Optional [str] = Field(min_length=10, default=None)
-    date_of_birth: Optional [date] = Field(default='yyy-mm-dd')
+    first_name: Optional[str] = Field(max_length=50, default=None)
+    last_name: Optional[str] = Field(max_length=50, default=None)
+    email: Optional[str] = Field(default='example@example.com')
+    hashed_password: Optional[str] = Field(min_length=10, default=None)
+    date_of_birth: Optional[date] = Field(default='yyy-mm-dd')
     is_active: Optional[bool] = Field(default=True)
+
+
+class ResetUserPassword(BaseModel):
+    """
+    Info for reset forgotten user's password.
+    """
+    email: Optional[str] = None
+    username: Optional[str] = None
+    password: str = Field(min_length=10)
 
 
 class Token(BaseModel):

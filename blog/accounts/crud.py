@@ -1,12 +1,13 @@
-from typing import Type
+from typing import Type, Union
 
 from sqlalchemy.orm import Session
 
+from posts.models import Post, Category
 from . import models, schemas, security
 from .models import User
 
 
-def get_user_by_email(db: Session, email: str) -> User | None:
+def get_user_by_email(db: Session, email: str) -> Union[User, None]:
     """
     Obtain user by its `email` address.
     """
@@ -20,14 +21,14 @@ def get_users(db: Session, skip: int = 0, limit: int = 100) -> list[Type[User]]:
     return db.query(models.User).offset(skip).limit(limit).all()
 
 
-def get_user_by_id(db: Session, user_id: int) -> User | None:
+def get_user_by_id(db: Session, user_id: int) -> Union[User, None]:
     """
     Obtain user by its `user_id`
     """
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 
-def get_user_by_username(db: Session, username: str) -> User | None:
+def get_user_by_username(db: Session, username: str) -> Union[User, None]:
     """
     Obtain user by its `username`.
     """
@@ -53,6 +54,14 @@ def create_user(db: Session, user: schemas.UserCreate) -> User:
     return user
 
 
+def delete_user(db: Session, user: User) -> None:
+    """
+    Remove `user` from db.
+    """
+    db.delete(user)
+    db.commit()
+
+
 def update_user(db: Session, user: User, data_to_update: dict) -> User:
     """
     Update user info from `data_to_update`.
@@ -66,3 +75,38 @@ def update_user(db: Session, user: User, data_to_update: dict) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+
+def get_current_user_posts(db: Session, user: User, criteria: Union[dict, None]) -> list[Post]:
+    """
+    Retrieve all posts in which `user` as owner.
+    """
+    if not criteria:
+        statement = db.query(Post).filter(Post.owner.has(User.id == user.id))
+    else:
+        statement = db.query(Post).filter(
+            Post.owner.has(User.id == user.id),
+            Post.tags.icontains(','.join(criteria['tags'])),
+            Category.name.icontains(criteria['category']),
+            Post.rating == criteria['rating'],
+            Post.is_publish == criteria['is_publish'],
+        ).distinct()
+    result = db.execute(statement)
+    return list(result.scalars().all())
+
+
+def reset_user_password(db: Session, data: dict) -> None:
+    """
+    Reset user's account password.
+    """
+    user = None
+    # select between email or username (depends upon what was passed)
+    if data['email']:
+        user = get_user_by_email(db, data.get('email'))
+    elif data['username']:
+        user = get_user_by_username(db, data.get('username'))
+
+    # hashing plain password
+    hashed_password = security.get_password_hash(data['password'])
+    db.query(User).filter(models.User.id == user.id).update({'hashed_password': hashed_password})
+    db.commit()
