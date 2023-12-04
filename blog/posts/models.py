@@ -1,9 +1,30 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, SmallInteger, Text, DateTime
+from sqlalchemy import (
+    Boolean, Column, Integer,
+    String, ForeignKey, SmallInteger,
+    Text, DateTime, Table
+)
 from sqlalchemy.orm import relationship
 
 from db_connection import Base
+
+# association tables for likes and dislikes for user
+likes_table = Table(
+    'likes',
+    Base.metadata,
+    Column('id', primary_key=True, index=True),
+    Column('comment_id', ForeignKey('comments.id'), nullable=False),
+    Column('user_id', ForeignKey('users.id'), nullable=False),
+)
+
+dislikes_table = Table(
+    'dislikes',
+    Base.metadata,
+    Column('id', primary_key=True, index=True),
+    Column('comment_id', ForeignKey('comments.id'), nullable=False),
+    Column('user_id', ForeignKey('users.id'), nullable=False),
+)
 
 
 class Post(Base):
@@ -23,8 +44,11 @@ class Post(Base):
     owner_id = Column(Integer, ForeignKey('users.id'))
     rating = Column('rating', SmallInteger, default=0)
     is_publish = Column('is_publish', Boolean, default=False)
+    comments = relationship('Comment', back_populates='post')
+    likes = relationship('Comment', secondary=likes_table)
+    dislikes = relationship('Comment', secondary=dislikes_table)
     created = Column('created', DateTime, default=datetime.utcnow)
-    updated = Column('updated', DateTime, default=datetime.utcnow, onupdate=datetime.now)
+    updated = Column('updated', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f'Post:`{self.title[:50]}`, owner:`{self.owner}`'
@@ -34,6 +58,7 @@ class Category(Base):
     """
     Post's category.
     """
+
     __tablename__ = 'postcategories'
 
     id = Column(Integer, primary_key=True, index=True)
@@ -42,3 +67,23 @@ class Category(Base):
 
     def __repr__(self):
         return f'Post category: `{self.name}`'
+
+
+class Comment(Base):
+    """
+    Post's comment.
+    """
+
+    __tablename__ = 'comments'
+
+    id = Column('id', Integer, primary_key=True, index=True)
+    body = Column('body', String(600), nullable=False)
+    post_id = Column(Integer, ForeignKey('posts.id'))
+    owner_id = Column(Integer, ForeignKey('users.id'))
+    owner = relationship('User', back_populates='comments')
+    likes = relationship('User', secondary=likes_table)
+    dislikes = relationship('User', secondary=dislikes_table)
+    post = relationship('Post', back_populates='comments')
+
+    def __repr__(self):
+        return f'Comment `{self.body[:70]}`'

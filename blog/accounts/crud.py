@@ -88,9 +88,8 @@ def get_current_user_posts(db: Session, user: User, criteria: Union[dict, None])
             Post.owner.has(User.id == user.id),
             Post.tags.icontains(','.join(criteria['tags'])),
             Category.name.icontains(criteria['category']),
-            Post.rating == criteria['rating'],
-            Post.is_publish == criteria['is_publish'],
-        ).distinct()
+            Post.rating >= criteria['rating'],
+            Post.is_publish == criteria['is_publish']).distinct()
     result = db.execute(statement)
     return list(result.scalars().all())
 

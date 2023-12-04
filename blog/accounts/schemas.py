@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
     username: str = Field(max_length=30)
     first_name: str = Field(max_length=50)
     last_name: Optional[str] = Field(max_length=50, default=None)
+    gender: Optional[str] = Field(max_length=6, default=None, examples=['male/female'])
     email: str
     password: str = Field(min_length=10)
     date_of_birth: Optional[date] = None
@@ -25,6 +26,7 @@ class UserShow(BaseModel):
     username: str = Field(max_length=30)
     first_name: str = Field(max_length=50)
     last_name: Optional[str]
+    gender: str
     email: str = Field()
     role: str
     is_active: bool
@@ -44,10 +46,19 @@ class UserUpdate(BaseModel):
     username: Optional[str] = Field(max_length=30, default=None)
     first_name: Optional[str] = Field(max_length=50, default=None)
     last_name: Optional[str] = Field(max_length=50, default=None)
+    gender: Optional[str] = Field(max_length=6, default=None)
     email: Optional[str] = Field(default='example@example.com')
     hashed_password: Optional[str] = Field(min_length=10, default=None)
     date_of_birth: Optional[date] = Field(default='yyy-mm-dd')
     is_active: Optional[bool] = Field(default=True)
+
+
+class UsersLikesDislikesShow(BaseModel):
+    """
+    Info about users, which are in likes and dislikes lists.
+    """
+    id: int
+    username: str
 
 
 class ResetUserPassword(BaseModel):

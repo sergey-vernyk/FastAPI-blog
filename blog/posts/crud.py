@@ -1,9 +1,10 @@
-from typing import Union
+from typing import Type, Union
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from accounts import schemas as user_schemas
+from accounts.models import User
 from . import models, schemas
 from .models import Post, Category
 
@@ -54,11 +55,11 @@ def create_post(db: Session,
 
 def create_category(db: Session,
                     category: schemas.CategoryCreate,
-                    user: user_schemas.UserCreate) -> Category:
+                    user: user_schemas.UserShow) -> Category:
     """
     Create post's category by passed parameters.
     """
-    if user.role != 'admin':
+    if user.role not in ('admin', 'moderator'):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail='Only admin users be able to perform this action'
@@ -71,6 +72,21 @@ def create_category(db: Session,
     return category
 
 
+def get_posts(db: Session, category: str, skip: int = 0, limit: int = 100) -> list[Type[Post]]:
+    """
+    Return all posts in the `db` with offset `skip` and `limit`.
+    """
+    return db.query(models.Post).join(
+        models.Category).filter(models.Category.name.icontains(category)).offset(skip).limit(limit).all()
+
+
+def get_post_categories(db: Session, skip: int = 0, limit: int = 100) -> list[Type[Category]]:
+    """
+    Return all categories in the `db` with offset `skip` and `limit`.
+    """
+    return db.query(models.Category).offset(skip).limit(limit).all()
+
+
 def update_post(db: Session, post: Post, data_to_update: dict) -> Post:
     """
     Update post with passed parameters.
@@ -79,3 +95,74 @@ def update_post(db: Session, post: Post, data_to_update: dict) -> Post:
     db.commit()
     db.refresh(post)
     return post
+
+
+def delete_post(db: Session, post: Post) -> None:
+    """
+    Remove `post` from db.
+    """
+    db.delete(post)
+    db.commit()
+
+
+def create_comment(db: Session,
+                   comment: schemas.CommentCreate,
+                   user: schemas.UsersLikesDislikesShow,
+                   post_id: int) -> models.Comment:
+    """
+    Create comment for `post_id` behalf `user`.
+    """
+    comment = models.Comment(
+        body=comment.body,
+        post_id=post_id,
+        owner_id=user.id
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+def get_comment_by_id(db: Session, comment_id: int) -> Union[models.Comment, None]:
+    """
+    Obtain comment with `comment_id` from db.
+    """
+    return db.query(models.Comment).get(comment_id)
+
+
+def set_like_or_dislike_for_comment(db: Session, user: User, comment: models.Comment, action: str) -> models.Comment:
+    """
+    Set comment with `comment_id` as liked/disliked by `user`.
+    """
+    is_already_set_like = user in comment.likes
+    is_already_set_dislike = user in comment.dislikes
+
+    if action not in ('like', 'dislike'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f'Action is either like or dislike. Action <{action}> was passed'
+        )
+
+    if action == 'like':
+        # toggle from dislike to like
+        if is_already_set_dislike:
+            comment.dislikes.remove(user)
+            comment.likes.append(user)
+        elif is_already_set_like:
+            comment.likes.remove(user)  # unset `like`
+        elif not is_already_set_like:
+            comment.likes.append(user)  # set `like`
+    elif action == 'dislike':
+        # toggle from like to dislike
+        if is_already_set_like:
+            comment.likes.remove(user)
+            comment.dislikes.append(user)
+        elif is_already_set_dislike:
+            comment.dislikes.remove(user)  # unset `dislike`
+        elif not is_already_set_dislike:
+            comment.dislikes.append(user)  # set `dislike`
+
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment

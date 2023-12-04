@@ -1,7 +1,7 @@
 from datetime import timedelta
 from typing import Annotated, Type, Union
 
-from fastapi import APIRouter, status, HTTPException, Depends
+from fastapi import APIRouter, status, HTTPException, Depends, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import UJSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -19,7 +19,7 @@ router = APIRouter()
 settings = Settings()
 permission_exception = HTTPException(
     status_code=status.HTTP_403_FORBIDDEN,
-    detail='Only admin users be able to perform this action'
+    detail='Only staff users be able to perform this action'
 )
 
 
@@ -59,7 +59,7 @@ async def delete_user_by_id(current_user: CurrentUserDependency,
     """
     Remove user from db by `user_id`.
     """
-    if current_user.role != 'admin':
+    if current_user.role not in ('admin', 'moderator'):
         raise permission_exception
     db_user = crud.get_user_by_id(db, user_id)
     if not db_user:
@@ -84,7 +84,7 @@ async def read_users(token: Annotated[str, Depends(oauth2_scheme)],
     """
     token_data = get_token_data(token)
     user = crud.get_user_by_username(db, token_data.username)
-    if user.role != 'admin':
+    if user.role not in ('admin', 'moderator'):
         raise permission_exception
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
@@ -100,11 +100,11 @@ async def read_user_by_id(current_user: CurrentUserDependency,
     """
     Obtain user by its `user_id`.
     """
-    if current_user.role != 'admin':
+    if current_user.role not in ('admin', 'moderator'):
         raise permission_exception
     user = crud.get_user_by_id(db, user_id=user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404, detail='User not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
     return user
 
 
@@ -190,11 +190,20 @@ async def update_user_info(current_user: CurrentUserDependency,
             summary='Get posts that published by current user')
 async def get_user_posts(db: DatabaseDependency,
                          current_user: CurrentUserDependency,
-                         apply_filter: bool = False,
-                         tags: str = '',
-                         is_publish: bool = True,
-                         rating: int = 5,
-                         category: str = '') -> list[Post]:
+                         apply_filter: Annotated[bool, Query(
+                             description='Using filter with values below',
+                             title='Apply filter')] = False,
+                         tags: Annotated[str, Query(
+                             description='Tags which can contains in posts',
+                             title='Post tags',
+                             example='tag1,tag2,tag3')] = '',
+                         is_publish: Annotated[bool, Query(
+                             description='Whether posts were publish or not')] = True,
+                         rating: Annotated[int, Query(
+                             description='Rating of posts. Greater or equal',
+                             ge=0, le=5)] = 5,
+                         category: Annotated[str, Query(
+                             description="Post's category")] = '') -> list[Post]:
     """
     Obtain all posts behalf `current_user` with `criteria`.
     If not passed `criteria`, filtering performed only by `current_user`.
@@ -214,12 +223,13 @@ async def get_user_posts(db: DatabaseDependency,
 @router.post('/reset_password',
              response_class=UJSONResponse,
              summary='Reset forgotten user password and set new password')
-def reset_password(form: schemas.ResetUserPassword,
-                   db: DatabaseDependency) -> UJSONResponse:
+async def reset_password(form: schemas.ResetUserPassword,
+                         db: DatabaseDependency) -> UJSONResponse:
     """
     Reset user password, which user could forget,
     or for update old password.
-    User be able to enter only its email address or its username for perform this action.
+    User be able to enter only its (email or username)
+    and password for perform this action.
     """
     received_data = {
         'username': form.username,
@@ -229,5 +239,5 @@ def reset_password(form: schemas.ResetUserPassword,
     crud.reset_user_password(db, received_data)
     return UJSONResponse(
         {'success': 'Password has been changed successfully'},
-        status_code=200
+        status_code=status.HTTP_200_OK
     )

@@ -3,6 +3,7 @@ from sqlalchemy import types
 from sqlalchemy.orm import relationship
 
 from db_connection import Base
+from posts.models import likes_table, dislikes_table
 
 
 class ChoiceType(types.TypeDecorator):
@@ -40,11 +41,20 @@ class User(Base):
     ), default='regular-user', nullable=False)
     first_name = Column('first_name', String(50))
     last_name = Column('last_name', String(50))
+    gender = Column('gender', ChoiceType(
+        {
+            'male': 'male',
+            'female': 'female'
+        }
+    ), nullable=True)
     date_of_birth = Column('date_of_birth', Date())
     email = Column('email', String, unique=True, index=True, nullable=False)
     hashed_password = Column(String)
     is_active = Column('is_active', Boolean, default=True)
     posts = relationship('Post', back_populates='owner')
+    likes = relationship('Comment', secondary=likes_table)
+    dislikes = relationship('Comment', secondary=dislikes_table)
+    comments = relationship('Comment', back_populates='owner')
 
     def __repr__(self):
         return f'User `{self.username}`'
