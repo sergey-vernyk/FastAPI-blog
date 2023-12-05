@@ -29,13 +29,22 @@ class PostShow(BaseModel):
         from_attributes = True
 
 
+class PostShowBriefly(BaseModel):
+    """
+    Briefly info about post.
+    """
+    id: int
+    title: str
+    tags: str
+
+
 class Category(BaseModel):
     """
     Information about post category.
     """
     id: int
     name: str
-    posts: List[PostShow]
+    posts: List[PostShowBriefly]
 
 
 class PostCreate(BaseModel):
@@ -83,5 +92,15 @@ class CommentShow(CommentCreate):
     """
     id: int
     post: PostShow
+    likes: list[UsersLikesDislikesShow]
+    dislikes: list[UsersLikesDislikesShow]
+
+
+class UserCommentsShow(BaseModel):
+    """
+    Info for displaying comments that related to particular user.
+    """
+    post: PostShowBriefly
+    body: str
     likes: list[UsersLikesDislikesShow]
     dislikes: list[UsersLikesDislikesShow]

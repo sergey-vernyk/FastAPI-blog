@@ -45,8 +45,6 @@ class Post(Base):
     rating = Column('rating', SmallInteger, default=0)
     is_publish = Column('is_publish', Boolean, default=False)
     comments = relationship('Comment', back_populates='post')
-    likes = relationship('Comment', secondary=likes_table)
-    dislikes = relationship('Comment', secondary=dislikes_table)
     created = Column('created', DateTime, default=datetime.utcnow)
     updated = Column('updated', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

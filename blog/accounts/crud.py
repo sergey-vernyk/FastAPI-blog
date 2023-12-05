@@ -2,7 +2,7 @@ from typing import Type, Union
 
 from sqlalchemy.orm import Session
 
-from posts.models import Post, Category
+from posts.models import Post, Category, Comment
 from . import models, schemas, security
 from .models import User
 
@@ -92,6 +92,27 @@ def get_current_user_posts(db: Session, user: User, criteria: Union[dict, None])
             Post.is_publish == criteria['is_publish']).distinct()
     result = db.execute(statement)
     return list(result.scalars().all())
+
+
+def get_comments_for_user(db: Session,
+                          user: User,
+                          status: str,
+                          skip: int = 0,
+                          limit: int = 100) -> list[Type[Comment]]:
+    """
+    Obtain comments whom owner is `user`.
+    The choice is obtained all user's comment or either only liked comment or disliked.
+    """
+    comments = db.query(Comment).join(User).filter(Comment.owner.has(User.id == user.id)).order_by('id')
+
+    if status == 'like':
+        comments = comments.filter(Comment.likes).offset(skip).limit(limit).all()  # get comments which got like
+    elif status == 'dislike':
+        comments = comments.filter(Comment.dislikes).offset(skip).limit(limit).all()  # get comments which got dislike
+    else:
+        comments = comments.offset(skip).limit(limit).all()  # get all comments
+
+    return comments
 
 
 def reset_user_password(db: Session, data: dict) -> None:

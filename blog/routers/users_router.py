@@ -12,8 +12,8 @@ from accounts.schemas import Token
 from accounts.security import verify_password, create_access_token, get_token_data
 from config import Settings
 from dependencies import oauth2_scheme, DatabaseDependency, CurrentUserDependency
-from posts.models import Post
-from posts.schemas import UserPostsShow
+from posts.models import Post, Comment
+from posts.schemas import UserPostsShow, UserCommentsShow
 
 router = APIRouter()
 settings = Settings()
@@ -42,8 +42,7 @@ async def create_user(user: schemas.UserCreate, db: DatabaseDependency) -> User:
 @router.delete('/delete/me',
                status_code=status.HTTP_204_NO_CONTENT,
                summary='Delete own user')
-async def delete_user_me(current_user: CurrentUserDependency,
-                         db: DatabaseDependency) -> None:
+async def delete_user_me(current_user: CurrentUserDependency, db: DatabaseDependency) -> None:
     """
     Remove `current_user` from db.
     """
@@ -53,9 +52,7 @@ async def delete_user_me(current_user: CurrentUserDependency,
 @router.delete('/delete/{user_id}',
                status_code=status.HTTP_204_NO_CONTENT,
                summary='Delete user by `user_id`')
-async def delete_user_by_id(current_user: CurrentUserDependency,
-                            user_id: int,
-                            db: DatabaseDependency) -> None:
+async def delete_user_by_id(current_user: CurrentUserDependency, user_id: int, db: DatabaseDependency) -> None:
     """
     Remove user from db by `user_id`.
     """
@@ -96,7 +93,7 @@ async def read_users(token: Annotated[str, Depends(oauth2_scheme)],
             summary='Get user by passed `user_id`')
 async def read_user_by_id(current_user: CurrentUserDependency,
                           user_id: int,
-                          db: DatabaseDependency) -> Type[User] | HTTPException:
+                          db: DatabaseDependency) -> Union[HTTPException, Type[User]]:
     """
     Obtain user by its `user_id`.
     """
@@ -176,7 +173,7 @@ async def update_user_info(current_user: CurrentUserDependency,
     """
     current_user_data = jsonable_encoder(current_user)
     stored_user_model_schema = schemas.UserUpdate(**current_user_data)
-    # exclude fields that wes not passed for update and considered as `None`
+    # exclude fields that were not passed for update and considered as `None`
     data_to_update = data.model_dump(exclude_none=True)
     # update only fields which are in `data_to_update` variable
     updated_user_data = stored_user_model_schema.model_copy(update=data_to_update)
@@ -218,6 +215,28 @@ async def get_user_posts(db: DatabaseDependency,
             'tags': tags.split(',') if len(tags) >= 1 else [tags]
         }
     return crud.get_current_user_posts(db, current_user, criteria)
+
+
+@router.get('/comments',
+            response_model=list[UserCommentsShow],
+            status_code=status.HTTP_200_OK,
+            summary='Get all comments related to current user')
+async def get_users_comments(db: DatabaseDependency,
+                             current_user: CurrentUserDependency,
+                             rate_status: Annotated[str, Query(
+                                 description='Get only either liked or disliked comments')] = 'all',
+                             skip: int = 0,
+                             limit: int = 100) -> list[Type[Comment]]:
+    """
+    Obtain comments, which related to `current_user`.
+    Filter comments by installed status: like or dislike.
+    """
+    if rate_status not in ('like', 'dislike', 'all'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f'Only `like`, `dislike` or `all` is allow. But <{rate_status}> was provided'
+        )
+    return crud.get_comments_for_user(db, current_user, rate_status, skip, limit)
 
 
 @router.post('/reset_password',
