@@ -45,8 +45,8 @@ def create_user(db: Session, user: schemas.UserCreate) -> User:
                        hashed_password=hashed_password,
                        first_name=user.first_name,
                        last_name=user.last_name,
+                       gender=user.gender,
                        username=user.username,
-                       role=user.role,
                        date_of_birth=user.date_of_birth)
     db.add(user)  # `add` that instance object to database session
     db.commit()  # save changes to the database

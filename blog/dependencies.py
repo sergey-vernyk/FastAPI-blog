@@ -1,8 +1,9 @@
-from typing import Annotated
+from typing import Annotated, Type
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Security
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 from jose import JWTError, jwt
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from accounts import models, crud
@@ -12,7 +13,30 @@ from db_connection import SessionLocal
 
 settings = Settings()
 # for authentication using Bearer Token obtained with a password
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/users/token')
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl='/users/token',
+    scopes={
+        'post:create': 'Write new post',
+        'category:create': 'Create new category for posts',
+        'post:read': 'Read post information',
+        'post:update': 'Update post information',
+        'post:delete': 'Delete post',
+
+        'comment:update': 'Update comment body',
+        'comment:delete': 'Delete comment',
+        'comment:create': 'Create comment',
+        'comment:rate': 'Set like or dislike for comment',
+
+        'user:read': 'Read user information',
+        'user:update': 'Update user information',
+        'user:delete': 'Delete user',
+
+        'me:delete': 'Delete own user',
+        'me:update': 'Update own user info',
+        'me:read': 'Read own profile information',
+
+    }
+)
 
 
 def get_db():
@@ -27,40 +51,50 @@ def get_db():
 DatabaseDependency = Annotated[Session, Depends(get_db)]
 
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)],
-                           db: Session = Depends(get_db)) -> models.User:
+async def get_current_user(security_scopes: SecurityScopes,
+                           token: Annotated[str, Depends(oauth2_scheme)],
+                           db: DatabaseDependency) -> models.User:
     """
     Obtain current user by passed `token`. Used as dependency.
     """
+    if security_scopes.scopes:
+        authenticate_value = f'Bearer scope="{security_scopes.scope_str}"'
+    else:
+        authenticate_value = 'Bearer'
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail='Could not validate credentials',
-        headers={'WWW-Authenticate': 'Bearer'},
+        headers={'WWW-Authenticate': authenticate_value},
     )
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         username: str = payload.get('sub')
         if username is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
-    except JWTError:
+        token_scopes = payload.get('scopes', [])
+        token_data = TokenData(username=username, scopes=token_scopes)
+    except (JWTError, ValidationError):
         raise credentials_exception
-    user = get_user_by_username(username=token_data.username, db=db)
+    user = crud.get_user_by_username(db=db, username=token_data.username)
     if user is None:
         raise credentials_exception
+    # try to compare security scopes from decoded user's access bearer token with scopes for current endpoint
+    for scope in security_scopes.scopes:
+        if scope not in token_data.scopes:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail='Not enough permissions',
+                headers={'WWW-Authenticate': authenticate_value},
+            )
     return user
 
 
 CurrentUserDependency = Annotated[models.User, Depends(get_current_user)]
 
 
-def get_user_by_username(username: str,
-                         db: Session = Depends(get_db)) -> models.User:
+def SecurityScopesDependency(scopes: list) -> Type[models.User]:
     """
-    Obtain user by its `username`.
+    Return user with security metadata dependency taking in account passed `scopes`.
     """
-    user = crud.get_user_by_username(db, username=username)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404, detail='User not found')
-    return user
+    return Annotated[models.User, Security(get_current_user, scopes=scopes)]

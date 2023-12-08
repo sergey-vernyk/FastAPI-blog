@@ -3,7 +3,7 @@ from typing import List
 
 from pydantic import BaseModel, Field
 
-from blog.accounts.schemas import UsersLikesDislikesShow
+from accounts.schemas import UsersLikesDislikesShow
 
 
 class CategoryCreate(BaseModel):
@@ -11,22 +11,6 @@ class CategoryCreate(BaseModel):
     Information which displays while creating post category.
     """
     name: str
-
-
-class PostShow(BaseModel):
-    """
-    Information which displays while obtaining post.
-    """
-    id: int
-    tags: str
-    body: str = Field(max_length=2000)
-    category: CategoryCreate
-    rating: int = Field(ge=0, le=5, default=0)
-    updated: datetime
-    created: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class PostShowBriefly(BaseModel):
@@ -67,7 +51,7 @@ class PostUpdate(PostCreate):
 
 class UserPostsShow(BaseModel):
     """
-    Posts which has been written behalf user.
+    Posts which had been written behalf user.
     """
     id: int
     title: str
@@ -79,21 +63,44 @@ class UserPostsShow(BaseModel):
     updated: datetime
 
 
-class CommentCreate(BaseModel):
+class CommentCreateOrUpdate(BaseModel):
     """
     Info for creating comment about a post.
     """
     body: str = Field(max_length=600)
 
 
-class CommentShow(CommentCreate):
+class CommentShow(CommentCreateOrUpdate):
     """
     Info for display comment info.
     """
     id: int
-    post: PostShow
     likes: list[UsersLikesDislikesShow]
     dislikes: list[UsersLikesDislikesShow]
+
+
+class PostShow(BaseModel):
+    """
+    Information which displays while obtaining post.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.count_comments = kwargs['count_comments']
+
+    id: int
+    title: str
+    tags: str
+    body: str = Field(max_length=2000)
+    category: CategoryCreate
+    rating: int = Field(ge=0, le=5, default=0)
+    updated: datetime
+    created: datetime
+    count_comments: int
+    comments: list[CommentShow]
+
+    class Config:
+        from_attributes = True
 
 
 class UserCommentsShow(BaseModel):

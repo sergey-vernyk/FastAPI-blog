@@ -1,6 +1,7 @@
 from typing import Type, Union
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from accounts import schemas as user_schemas
@@ -72,12 +73,13 @@ def create_category(db: Session,
     return category
 
 
-def get_posts(db: Session, category: str, skip: int = 0, limit: int = 100) -> list[Type[Post]]:
+def get_posts_query(db: Session, category: str, skip: int = 0, limit: int = 100) -> Query:
     """
-    Return all posts in the `db` with offset `skip` and `limit`.
+    Return query for get all posts in the `db` with offset `skip` and `limit`.
     """
-    return db.query(models.Post).join(
-        models.Category).filter(models.Category.name.icontains(category)).offset(skip).limit(limit).all()
+    return db.query(models.Post, func.count(models.Comment.id).label('comment_count')).join(
+        models.Category).outerjoin(models.Comment).filter(models.Category.name.icontains(category)).group_by(
+        models.Post.id).offset(skip).limit(limit)
 
 
 def get_post_categories(db: Session, skip: int = 0, limit: int = 100) -> list[Type[Category]]:
@@ -106,7 +108,7 @@ def delete_post(db: Session, post: Post) -> None:
 
 
 def create_comment(db: Session,
-                   comment: schemas.CommentCreate,
+                   comment: schemas.CommentCreateOrUpdate,
                    user: schemas.UsersLikesDislikesShow,
                    post_id: int) -> models.Comment:
     """
@@ -166,3 +168,21 @@ def set_like_or_dislike_for_comment(db: Session, user: User, comment: models.Com
     db.commit()
     db.refresh(comment)
     return comment
+
+
+def update_comment(db: Session, comment: models.Comment, data_to_update: dict) -> models.Comment:
+    """
+    Update comment's body.
+    """
+    db.query(models.Comment).filter(models.Comment.id == comment.id).update(data_to_update)
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+def delete_comment(db: Session, comment: models.Comment) -> None:
+    """
+    Remove `comment` from database.
+    """
+    db.delete(comment)
+    db.commit()

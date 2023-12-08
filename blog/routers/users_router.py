@@ -1,17 +1,16 @@
 from datetime import timedelta
 from typing import Annotated, Type, Union
 
-from fastapi import APIRouter, status, HTTPException, Depends, Query
-from fastapi.encoders import jsonable_encoder
+from fastapi import APIRouter, status, HTTPException, Depends, Query, Security
 from fastapi.responses import UJSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 from accounts import schemas, models, crud
 from accounts.models import User
 from accounts.schemas import Token
-from accounts.security import verify_password, create_access_token, get_token_data
+from accounts.security import verify_password, create_access_token
 from config import Settings
-from dependencies import oauth2_scheme, DatabaseDependency, CurrentUserDependency
+from dependencies import DatabaseDependency, CurrentUserDependency, SecurityScopesDependency, get_current_user
 from posts.models import Post, Comment
 from posts.schemas import UserPostsShow, UserCommentsShow
 
@@ -27,22 +26,25 @@ permission_exception = HTTPException(
              response_model=schemas.UserShow,
              status_code=status.HTTP_201_CREATED,
              summary='Create user')
-async def create_user(user: schemas.UserCreate, db: DatabaseDependency) -> User:
+async def create_user(user: schemas.UserCreate, db: DatabaseDependency) -> Union[User, HTTPException]:
     """
     Create user in database.
     """
     # try to get user by its email
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail='Email already registered')
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Email already registered'
+        )
     return crud.create_user(db=db, user=user)
 
 
 @router.delete('/delete/me',
                status_code=status.HTTP_204_NO_CONTENT,
                summary='Delete own user')
-async def delete_user_me(current_user: CurrentUserDependency, db: DatabaseDependency) -> None:
+async def delete_user_me(current_user: Annotated[User, Security(get_current_user, scopes=['me:delete'])],
+                         db: DatabaseDependency) -> None:
     """
     Remove `current_user` from db.
     """
@@ -51,13 +53,13 @@ async def delete_user_me(current_user: CurrentUserDependency, db: DatabaseDepend
 
 @router.delete('/delete/{user_id}',
                status_code=status.HTTP_204_NO_CONTENT,
-               summary='Delete user by `user_id`')
-async def delete_user_by_id(current_user: CurrentUserDependency, user_id: int, db: DatabaseDependency) -> None:
+               summary='Delete user by `user_id`',
+               dependencies=[Security(get_current_user, scopes=['user:delete'])])
+async def delete_user_by_id(user_id: int,
+                            db: DatabaseDependency) -> None:
     """
-    Remove user from db by `user_id`.
+    Remove user from `db` by `user_id`.
     """
-    if current_user.role not in ('admin', 'moderator'):
-        raise permission_exception
     db_user = crud.get_user_by_id(db, user_id)
     if not db_user:
         raise HTTPException(
@@ -71,18 +73,14 @@ async def delete_user_by_id(current_user: CurrentUserDependency, user_id: int, d
 @router.get('/read_all',
             response_model=list[schemas.UserShow],
             status_code=status.HTTP_200_OK,
-            summary='Get all users in the database')
-async def read_users(token: Annotated[str, Depends(oauth2_scheme)],
-                     db: DatabaseDependency,
+            summary='Get all users in the database',
+            dependencies=[Security(get_current_user, scopes=['user:read'])])
+async def read_users(db: DatabaseDependency,
                      skip: int = 0,
                      limit: int = 100) -> list[Type[models.User] | HTTPException]:
     """
     Obtain all users from database with `limit` and `skip`.
     """
-    token_data = get_token_data(token)
-    user = crud.get_user_by_username(db, token_data.username)
-    if user.role not in ('admin', 'moderator'):
-        raise permission_exception
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
 
@@ -90,15 +88,13 @@ async def read_users(token: Annotated[str, Depends(oauth2_scheme)],
 @router.get('/read/{user_id}',
             response_model=schemas.UserShow,
             status_code=status.HTTP_200_OK,
-            summary='Get user by passed `user_id`')
-async def read_user_by_id(current_user: CurrentUserDependency,
-                          user_id: int,
+            summary='Get user by passed `user_id`',
+            dependencies=[Security(get_current_user, scopes=['user:read'])])
+async def read_user_by_id(user_id: int,
                           db: DatabaseDependency) -> Union[HTTPException, Type[User]]:
     """
     Obtain user by its `user_id`.
     """
-    if current_user.role not in ('admin', 'moderator'):
-        raise permission_exception
     user = crud.get_user_by_id(db, user_id=user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
@@ -139,7 +135,8 @@ async def login_for_token(form_data: Annotated[OAuth2PasswordRequestForm, Depend
         )
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        data={'sub': user.username}, expires_delta=access_token_expires
+        data={'sub': user.username, 'scopes': form_data.scopes},
+        expires_delta=access_token_expires
     )
 
     return {'access_token': access_token, 'token_type': 'bearer'}
@@ -149,7 +146,7 @@ async def login_for_token(form_data: Annotated[OAuth2PasswordRequestForm, Depend
             response_model=schemas.UserShow,
             status_code=status.HTTP_200_OK,
             summary='Get info about current user')
-async def read_users_me(current_user: CurrentUserDependency) -> User:
+async def read_users_me(current_user: Annotated[User, Security(get_current_user, scopes=['me:read'])]) -> User:
     """
     Obtain current authenticated and active user, raise an exception otherwise.
     """
@@ -165,20 +162,16 @@ async def read_users_me(current_user: CurrentUserDependency) -> User:
               response_model=schemas.UserUpdate,
               status_code=status.HTTP_200_OK,
               summary='Update own user data')
-async def update_user_info(current_user: CurrentUserDependency,
+async def update_user_info(current_user: SecurityScopesDependency(scopes=['me:update']),
                            data: schemas.UserUpdate,
                            db: DatabaseDependency) -> User:
     """
     Update `current_user` information from `data`.
     """
-    current_user_data = jsonable_encoder(current_user)
-    stored_user_model_schema = schemas.UserUpdate(**current_user_data)
+    current_user = db.merge(current_user)  # copy instance into current session `db`
     # exclude fields that were not passed for update and considered as `None`
     data_to_update = data.model_dump(exclude_none=True)
-    # update only fields which are in `data_to_update` variable
-    updated_user_data = stored_user_model_schema.model_copy(update=data_to_update)
-    user_data_dict = jsonable_encoder(updated_user_data)  # convert to dictionary
-    return crud.update_user(db=db, user=current_user, data_to_update=user_data_dict)
+    return crud.update_user(db=db, user=current_user, data_to_update=data_to_update)
 
 
 @router.get('/posts',
@@ -247,7 +240,7 @@ async def reset_password(form: schemas.ResetUserPassword,
     """
     Reset user password, which user could forget,
     or for update old password.
-    User be able to enter only its (email or username)
+    User must enter ONLY its (email or username)
     and password for perform this action.
     """
     received_data = {

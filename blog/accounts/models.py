@@ -52,8 +52,8 @@ class User(Base):
     hashed_password = Column(String)
     is_active = Column('is_active', Boolean, default=True)
     posts = relationship('Post', back_populates='owner')
-    likes = relationship('Comment', secondary=likes_table)
-    dislikes = relationship('Comment', secondary=dislikes_table)
+    likes = relationship('Comment', secondary=likes_table, viewonly=True)
+    dislikes = relationship('Comment', secondary=dislikes_table, viewonly=True)
     comments = relationship('Comment', back_populates='owner')
 
     def __repr__(self):

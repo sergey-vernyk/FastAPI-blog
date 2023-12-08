@@ -15,7 +15,7 @@ class UserCreate(BaseModel):
     email: str
     password: str = Field(min_length=10)
     date_of_birth: Optional[date] = None
-    role: str = Field(default='regular-user')
+    # role: str = Field(default='regular-user')
 
 
 class UserShow(BaseModel):
@@ -26,6 +26,7 @@ class UserShow(BaseModel):
     username: str = Field(max_length=30)
     first_name: str = Field(max_length=50)
     last_name: Optional[str]
+    date_of_birth: date
     gender: str
     email: str = Field()
     role: str
@@ -41,16 +42,16 @@ class UserShow(BaseModel):
 
 class UserUpdate(BaseModel):
     """
-    Info for update.
+    Info for update user.
     """
     username: Optional[str] = Field(max_length=30, default=None)
     first_name: Optional[str] = Field(max_length=50, default=None)
     last_name: Optional[str] = Field(max_length=50, default=None)
     gender: Optional[str] = Field(max_length=6, default=None)
-    email: Optional[str] = Field(default='example@example.com')
+    email: Optional[str] = Field(examples=['example@example.com'], default=None)
     hashed_password: Optional[str] = Field(min_length=10, default=None)
-    date_of_birth: Optional[date] = Field(default='yyy-mm-dd')
-    is_active: Optional[bool] = Field(default=True)
+    date_of_birth: Optional[date] = Field(examples=['yyyy-mm-dd'], default=None)
+    is_active: Optional[bool] = Field(default=None)
 
 
 class UsersLikesDislikesShow(BaseModel):
@@ -80,6 +81,7 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     """
-    Data for get user from passed token.
+    Data for get username and scopes from passed token.
     """
     username: str | None = None
+    scopes: list[str] = []
