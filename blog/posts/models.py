@@ -1,9 +1,9 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Column, Integer,
-    String, ForeignKey, SmallInteger,
-    Text, DateTime, Table
+    Boolean, Column, DateTime,
+    ForeignKey, Integer, SmallInteger,
+    String, Table, Text
 )
 from sqlalchemy.orm import relationship
 

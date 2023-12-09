@@ -96,6 +96,7 @@ class PostShow(BaseModel):
     rating: int = Field(ge=0, le=5, default=0)
     updated: datetime
     created: datetime
+    is_publish: bool
     count_comments: int
     comments: list[CommentShow]
 

@@ -1,13 +1,13 @@
 from typing import Type, Union
 
-from fastapi import HTTPException, status, Query
+from fastapi import HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from accounts import schemas as user_schemas
 from accounts.models import User
 from . import models, schemas
-from .models import Post, Category
+from .models import Category, Post
 
 
 def get_post_by_title(db: Session, post_title: str) -> Union[Post, None]:
@@ -77,7 +77,7 @@ def get_posts_query(db: Session, category: str, skip: int = 0, limit: int = 100)
     """
     Return query for get all posts in the `db` with offset `skip` and `limit`.
     """
-    return db.query(models.Post, func.count(models.Comment.id).label('comment_count')).join(
+    return db.query(models.Post, func.count(models.Comment.id).label('count_comments')).join(
         models.Category).outerjoin(models.Comment).filter(models.Category.name.icontains(category)).group_by(
         models.Post.id).offset(skip).limit(limit)
 
@@ -89,14 +89,15 @@ def get_post_categories(db: Session, skip: int = 0, limit: int = 100) -> list[Ty
     return db.query(models.Category).offset(skip).limit(limit).all()
 
 
-def update_post(db: Session, post: Post, data_to_update: dict) -> Post:
+def update_post(db: Session, post: Post, data_to_update: dict) -> Query:
     """
     Update post with passed parameters.
     """
     db.query(models.Post).filter(models.Post.id == post.id).update(data_to_update)
     db.commit()
-    db.refresh(post)
-    return post
+    query = db.query(models.Post, func.count(models.Comment.id).label('count_comments')).join(
+        models.Category).outerjoin(models.Comment).filter(models.Post.id == post.id).group_by(models.Post.id)
+    return query
 
 
 def delete_post(db: Session, post: Post) -> None:

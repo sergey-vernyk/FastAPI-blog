@@ -81,7 +81,7 @@ def get_current_user_posts(db: Session, user: User, criteria: Union[dict, None])
     """
     Retrieve all posts in which `user` as owner.
     """
-    if not criteria:
+    if criteria is None:
         statement = db.query(Post).filter(Post.owner.has(User.id == user.id))
     else:
         statement = db.query(Post).filter(
