@@ -10,7 +10,12 @@ from accounts.models import User
 from accounts.schemas import Token
 from accounts.security import verify_password, create_access_token
 from config import Settings
-from dependencies import DatabaseDependency, CurrentUserDependency, SecurityScopesDependency, get_current_user
+from dependencies import (
+    DatabaseDependency,
+    CurrentUserDependency,
+    SecurityScopesDependency,
+    get_current_user
+)
 from posts.models import Post, Comment
 from posts.schemas import UserPostsShow, UserCommentsShow
 
@@ -43,11 +48,12 @@ async def create_user(user: schemas.UserCreate, db: DatabaseDependency) -> Union
 @router.delete('/delete/me',
                status_code=status.HTTP_204_NO_CONTENT,
                summary='Delete own user')
-async def delete_user_me(current_user: Annotated[User, Security(get_current_user, scopes=['me:delete'])],
+async def delete_user_me(current_user: SecurityScopesDependency(scopes=['me:delete']),
                          db: DatabaseDependency) -> None:
     """
     Remove `current_user` from db.
     """
+    current_user = db.merge(current_user)  # copy instance into current session `db`
     crud.delete_user(db, current_user)
 
 
@@ -146,7 +152,7 @@ async def login_for_token(form_data: Annotated[OAuth2PasswordRequestForm, Depend
             response_model=schemas.UserShow,
             status_code=status.HTTP_200_OK,
             summary='Get info about current user')
-async def read_users_me(current_user: Annotated[User, Security(get_current_user, scopes=['me:read'])]) -> User:
+async def read_users_me(current_user: SecurityScopesDependency(scopes=['me:read'])) -> User:
     """
     Obtain current authenticated and active user, raise an exception otherwise.
     """
@@ -179,7 +185,7 @@ async def update_user_info(current_user: SecurityScopesDependency(scopes=['me:up
             status_code=status.HTTP_200_OK,
             summary='Get posts that published by current user')
 async def get_user_posts(db: DatabaseDependency,
-                         current_user: CurrentUserDependency,
+                         current_user: SecurityScopesDependency(scopes=['post:read']),
                          apply_filter: Annotated[bool, Query(
                              description='Using filter with values below',
                              title='Apply filter')] = False,

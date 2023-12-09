@@ -4,14 +4,13 @@ from fastapi import APIRouter, status, HTTPException, Query, Security
 from fastapi.encoders import jsonable_encoder
 
 from accounts.models import User
-from accounts.schemas import UsersLikesDislikesShow
 from dependencies import (
     DatabaseDependency,
     get_current_user,
     SecurityScopesDependency
 )
 from posts import schemas, models, crud
-from posts.schemas import CategoryCreate, CommentShow
+from posts.utils import create_post_show_instance_with_extra_attributes
 
 router = APIRouter()
 
@@ -34,7 +33,7 @@ def show_exception(sub: str, error: status) -> HTTPException:
              summary='Create post')
 async def create_post(current_user: Annotated[User, Security(get_current_user, scopes=['post:create'])],
                       post: schemas.PostCreate,
-                      db: DatabaseDependency) -> Union[models.Post, HTTPException]:
+                      db: DatabaseDependency) -> Union[schemas.PostShow, HTTPException]:
     """
     Create `post` behalf `current_user`.
     """
@@ -42,7 +41,16 @@ async def create_post(current_user: Annotated[User, Security(get_current_user, s
     db_post = crud.get_post_by_title(db, post_title=post.title)
     if db_post:
         raise show_exception('post', status.HTTP_400_BAD_REQUEST)
-    return crud.create_post(db, post, current_user)
+    data_for_post_show = {}
+    # get created post, encode it into JSON
+    # instantiate other schemas which are in `PostShow` schema
+    # fill data for `PostShow` instance and create it from that data
+    post = crud.create_post(db, post, current_user)
+    post_info = jsonable_encoder(post)
+    category = schemas.CategoryCreate(name=post.category.name)
+    data_for_post_show.update(comments=[], category=category, count_comments=0, **post_info)
+    post_show = schemas.PostShow(**data_for_post_show)
+    return post_show
 
 
 @router.post('/category/create',
@@ -65,15 +73,16 @@ async def create_category(current_user: SecurityScopesDependency(['category:crea
             response_model=schemas.PostShow,
             status_code=status.HTTP_200_OK,
             summary='Get post by passed `post_id`')
-async def get_post_by_id(db: DatabaseDependency,
-                         post_id: int) -> Union[models.Post, HTTPException]:
+async def read_post(db: DatabaseDependency,
+                    post_id: int) -> schemas.PostShow:
     """
     Obtain post by its `post_id`.
     """
-    db_post = crud.get_post_by_id(db, post_id)
-    if not db_post:
+    query = crud.get_post_by_id(db, post_id)
+    post = db.execute(query).mappings().first()
+    if not post:
         raise show_exception('post', status.HTTP_404_NOT_FOUND)
-    return db_post
+    return create_post_show_instance_with_extra_attributes(post)
 
 
 @router.get('/read_all/posts',
@@ -92,23 +101,7 @@ async def read_posts(db: DatabaseDependency,
     posts_rows = db.execute(query).mappings().all()
     posts_show_list = []  # result list for response
     for row in posts_rows:
-        data_for_post_show = {}
-        post_instance = dict(row)['Post']
-        category = CategoryCreate(name=post_instance.category.name)
-        # list with comments pydentic instances and their rates
-        comments = [CommentShow(id=comment.id, body=comment.body,
-                                likes=[
-                                    UsersLikesDislikesShow(id=like.id, username=like.username)
-                                    for like in comment.likes],
-                                dislikes=[
-                                    UsersLikesDislikesShow(id=dislike.id, username=dislike.username)
-                                    for dislike in comment.dislikes])
-                    for comment in post_instance.comments]
-
-        data_for_post_show.update(comments=comments, count_comments=row['comment_count'], category=category)
-        data_for_post_show.update(jsonable_encoder(post_instance))
-        # instantiate `PostShow` instance and compose result response list
-        post_show = schemas.PostShow(**data_for_post_show)
+        post_show = create_post_show_instance_with_extra_attributes(row)
         posts_show_list.append(post_show)
 
     return posts_show_list
@@ -134,23 +127,28 @@ async def read_post_categories(db: DatabaseDependency,
 def update_post(post_id: int,
                 data: schemas.PostUpdate,
                 current_user: SecurityScopesDependency(scopes=['post:update']),
-                db: DatabaseDependency) -> Union[models.Post, HTTPException]:
+                db: DatabaseDependency) -> Union[schemas.PostShow, HTTPException]:
     """
     Update post's data.
     """
     db_post = crud.get_post_by_id(db, post_id)
     if not db_post:
         raise show_exception('post', status.HTTP_404_NOT_FOUND)
-    # restriction update post only by staff users or post's owner
-    if current_user.role not in ('admin', 'moderator') or db_post.id != post_id:
+    # restriction update post only by staff users or post's owner,
+    # even `current_user` has appropriate authorization scope
+    if current_user.id != db_post.owner_id and current_user.role not in ('moderator', 'admin'):
         raise show_exception('post', status.HTTP_403_FORBIDDEN)
     data_to_update = data.model_dump(exclude={'id', 'category'})
     data_to_update.update({
-        'category_id': db_post.category.id,
+        'category_id': db_post.category_id,
         'tags': ','.join(data_to_update['tags'])}
     )
+
     post_data_dict = jsonable_encoder(data_to_update)
-    return crud.update_post(db, db_post, post_data_dict)
+    updated_post_query = crud.update_post(db, db_post, post_data_dict)
+    post = db.execute(updated_post_query).mappings().first()
+    post_show = create_post_show_instance_with_extra_attributes(post)
+    return post_show
 
 
 @router.delete('/delete/{post_id}',
