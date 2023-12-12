@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 
-from accounts import models
-from db_connection import engine
 from blog.routers import posts_router
 from blog.routers import users_router
+from db_connection import Base, engine
 
-models.Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 description = """
 Blog on FastAPI Python Framework with user authentication and authorization,

@@ -192,7 +192,7 @@ async def get_user_posts(db: DatabaseDependency,
                          tags: Annotated[str, Query(
                              description='Tags which can contains in posts',
                              title='Post tags',
-                             example='tag1,tag2,tag3')] = '',
+                             examples=['tag1,tag2,tag3'])] = '',
                          is_publish: Annotated[bool, Query(
                              description='Whether posts were publish or not')] = True,
                          rating: Annotated[int, Query(

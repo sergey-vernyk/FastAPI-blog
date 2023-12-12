@@ -13,7 +13,7 @@ from db_connection import Base
 likes_table = Table(
     'likes',
     Base.metadata,
-    Column('id', primary_key=True, index=True),
+    Column('id', Integer, primary_key=True, index=True),
     Column('comment_id', ForeignKey('comments.id'), nullable=False),
     Column('user_id', ForeignKey('users.id'), nullable=False),
 )
@@ -21,7 +21,7 @@ likes_table = Table(
 dislikes_table = Table(
     'dislikes',
     Base.metadata,
-    Column('id', primary_key=True, index=True),
+    Column('id', Integer, primary_key=True, index=True),
     Column('comment_id', ForeignKey('comments.id'), nullable=False),
     Column('user_id', ForeignKey('users.id'), nullable=False),
 )
@@ -36,7 +36,7 @@ class Post(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column('title', String(512), nullable=False, unique=True)
-    body = Column('body', Text(2000), nullable=False)
+    body = Column('body', Text, nullable=False)
     tags = Column('tags', String(100), nullable=False)
     category = relationship('Category', back_populates='posts')
     category_id = Column(Integer, ForeignKey('postcategories.id'))
