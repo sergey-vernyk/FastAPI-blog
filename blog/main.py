@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 
-from blog.routers import posts_router
-from blog.routers import users_router
+from routers import posts_router, users_router
 from db_connection import Base, engine
 
 Base.metadata.create_all(bind=engine)

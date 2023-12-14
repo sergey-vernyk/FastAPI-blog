@@ -3,8 +3,9 @@ from typing import Union
 
 from jose import jwt
 from passlib.context import CryptContext
+
+from accounts.schemas import TokenData
 from config import Settings
-from blog.accounts.schemas import TokenData
 
 settings = Settings()
 
@@ -47,6 +48,7 @@ def get_token_data(token: str) -> TokenData:
     jwt_decode = jwt.decode(token=token,
                             key=settings.secret_key,
                             algorithms=[settings.algorithm])
-    username = jwt_decode.get('sub')  # get username from `sub`
-    token_data = TokenData(username=username)
+    username = jwt_decode.get('sub')
+    scopes = jwt_decode.get('scopes')
+    token_data = TokenData(username=username, scopes=scopes)
     return token_data

@@ -180,7 +180,7 @@ async def update_user_info(current_user: SecurityScopesDependency(scopes=['me:up
     return crud.update_user(db=db, user=current_user, data_to_update=data_to_update)
 
 
-@router.get('/posts',
+@router.get('/posts/me',
             response_model=list[UserPostsShow],
             status_code=status.HTTP_200_OK,
             summary='Get posts that published by current user')
@@ -216,7 +216,7 @@ async def get_user_posts(db: DatabaseDependency,
     return crud.get_current_user_posts(db, current_user, criteria)
 
 
-@router.get('/comments',
+@router.get('/comments/me',
             response_model=list[UserCommentsShow],
             status_code=status.HTTP_200_OK,
             summary='Get all comments related to current user')
