@@ -161,3 +161,4 @@ cython_debug/
 .idea/
 *.env
 .vscode
+*/kubernetes/sensetive/

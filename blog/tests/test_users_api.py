@@ -9,6 +9,7 @@ from posts.schemas import UserCommentsShow, UserPostsShow
 from .fixtures import *
 
 
+# TODO make tests when user is not authenticated and tests when user follow to an endpoint without particular scopes
 def test_create_user(client: TestClient):
     """
     Test create user with passed parameters.

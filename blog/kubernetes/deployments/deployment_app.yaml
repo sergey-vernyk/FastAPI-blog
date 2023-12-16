@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-blog-deployment
+spec:
+  selector:
+    matchLabels:
+      app: fastapi-blog-deployment
+  template:
+    metadata:
+      labels:
+        app: fastapi-blog-deployment
+    spec:
+      containers:
+      - name: fastapi-blog-deployment
+        image: sergeyvernyk/blog_fastapi:0.1.2
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - secretRef:
+            name: fastapi-secrets
+        volumeMounts:
+        - name: blog-api-volume-static
+          mountPath: /vol/static
+      volumes:
+      - name: blog-api-volume-static 
+  replicas: 3

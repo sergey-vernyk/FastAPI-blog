@@ -3,7 +3,7 @@ from typing import List
 
 from pydantic import BaseModel, Field
 
-from accounts.schemas import UsersLikesDislikesShow
+from accounts.schemas import UserShowBriefly
 
 
 class CategoryCreate(BaseModel):
@@ -75,8 +75,8 @@ class CommentShow(CommentCreateOrUpdate):
     Info for display comment info.
     """
     id: int
-    likes: list[UsersLikesDislikesShow]
-    dislikes: list[UsersLikesDislikesShow]
+    likes: list[UserShowBriefly]
+    dislikes: list[UserShowBriefly]
 
 
 class PostShow(BaseModel):
@@ -96,6 +96,7 @@ class PostShow(BaseModel):
     rating: int = Field(ge=0, le=5, default=0)
     updated: datetime
     created: datetime
+    owner: UserShowBriefly
     is_publish: bool
     count_comments: int
     comments: list[CommentShow]
@@ -110,5 +111,5 @@ class UserCommentsShow(BaseModel):
     """
     post: PostShowBriefly
     body: str
-    likes: list[UsersLikesDislikesShow]
-    dislikes: list[UsersLikesDislikesShow]
+    likes: list[UserShowBriefly]
+    dislikes: list[UserShowBriefly]

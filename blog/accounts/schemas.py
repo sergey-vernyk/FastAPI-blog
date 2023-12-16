@@ -54,7 +54,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = Field(default=None)
 
 
-class UsersLikesDislikesShow(BaseModel):
+class UserShowBriefly(BaseModel):
     """
     Info about users, which are in likes and dislikes lists.
     """

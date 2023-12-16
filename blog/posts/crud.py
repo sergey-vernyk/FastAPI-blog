@@ -17,11 +17,12 @@ def get_post_by_title(db: Session, post_title: str) -> Union[Post, None]:
     return db.query(models.Post).filter(models.Post.title == post_title).first()
 
 
-def get_post_by_id(db: Session, post_id: int) -> Union[Post, None]:
+def get_post_by_id(db: Session, post_id: int) -> Query:
     """
     Get post by its `post_id`.
     """
-    return db.query(models.Post).get(ident=post_id)
+    return db.query(models.Post, func.count(models.Comment.id).label('count_comments')).join(
+        models.Category).outerjoin(models.Comment).filter(models.Post.id == post_id).group_by(models.Post.id)
 
 
 def get_category_by_name(db: Session, name: str) -> Union[Category, None]:
@@ -110,7 +111,7 @@ def delete_post(db: Session, post: Post) -> None:
 
 def create_comment(db: Session,
                    comment: schemas.CommentCreateOrUpdate,
-                   user: schemas.UsersLikesDislikesShow,
+                   user: schemas.UserShowBriefly,
                    post_id: int) -> models.Comment:
     """
     Create comment for `post_id` behalf `user`.
