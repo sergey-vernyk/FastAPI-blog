@@ -77,6 +77,8 @@ class CommentShow(CommentCreateOrUpdate):
     id: int
     likes: list[UserShowBriefly]
     dislikes: list[UserShowBriefly]
+    created: datetime
+    updated: datetime
 
 
 class PostShow(BaseModel):
@@ -86,11 +88,11 @@ class PostShow(BaseModel):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.count_comments = kwargs['count_comments']
+        self.count_comments = kwargs.get('count_comments', 0)
 
     id: int
     title: str
-    tags: str
+    tags: List[str]
     body: str = Field(max_length=2000)
     category: CategoryCreate
     rating: int = Field(ge=0, le=5, default=0)
@@ -98,8 +100,8 @@ class PostShow(BaseModel):
     created: datetime
     owner: UserShowBriefly
     is_publish: bool
-    count_comments: int
-    comments: list[CommentShow]
+    count_comments: int = 0
+    comments: list[CommentShow] = []
 
     class Config:
         from_attributes = True

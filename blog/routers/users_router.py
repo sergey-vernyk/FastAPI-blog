@@ -1,18 +1,21 @@
 from datetime import timedelta
 from typing import Annotated, Type, Union
 
-from fastapi import APIRouter, status, HTTPException, Depends, Query, Security
+from fastapi import (
+    APIRouter, status, HTTPException,
+    Depends, Query, Security
+)
 from fastapi.responses import UJSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 from accounts import schemas, models, crud
 from accounts.models import User
 from accounts.schemas import Token
-from accounts.security import verify_password, create_access_token
+from accounts.security import create_access_token, verify_password_or_exception
+from common.utils import show_exception
 from config import Settings
 from dependencies import (
     DatabaseDependency,
-    CurrentUserDependency,
     SecurityScopesDependency,
     get_current_user
 )
@@ -68,11 +71,7 @@ async def delete_user_by_id(user_id: int,
     """
     db_user = crud.get_user_by_id(db, user_id)
     if not db_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail='User with passed id does not exists'
-        )
-
+        raise show_exception('user', status.HTTP_404_NOT_FOUND)
     crud.delete_user(db, db_user)
 
 
@@ -103,23 +102,7 @@ async def read_user_by_id(user_id: int,
     """
     user = crud.get_user_by_id(db, user_id=user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='User not found')
-    return user
-
-
-def authenticate_user(username: str,
-                      password: str,
-                      db: DatabaseDependency) -> Union[HTTPException, Type[User]]:
-    """
-    Returns user if it can be able to authenticated with passed `username` and `password`,
-    raise an exception otherwise.
-    """
-    user = crud.get_user_by_username(db, username)
-    if not user or not verify_password(password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail='Username or password is incorrect'
-        )
+        raise show_exception('user', status.HTTP_404_NOT_FOUND)
     return user
 
 
@@ -132,13 +115,11 @@ async def login_for_token(form_data: Annotated[OAuth2PasswordRequestForm, Depend
     """
     Obtain access bearer token using data from `from_data`.
     """
-    user = authenticate_user(form_data.username, form_data.password, db)
+    user = crud.get_user_by_username(db, form_data.username)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Incorrect username or password',
-            headers={'WWW-Authenticate': 'Bearer'}
-        )
+        raise show_exception('user', status.HTTP_404_NOT_FOUND)
+    # verify passed password from a frontend and hashed user's password in the db
+    verify_password_or_exception(user.hashed_password, form_data.password)
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
         data={'sub': user.username, 'scopes': form_data.scopes},
@@ -177,10 +158,10 @@ async def update_user_info(current_user: SecurityScopesDependency(scopes=['me:up
     current_user = db.merge(current_user)  # copy instance into current session `db`
     # exclude fields that were not passed for update and considered as `None`
     data_to_update = data.model_dump(exclude_none=True)
-    return crud.update_user(db=db, user=current_user, data_to_update=data_to_update)
+    return crud.update_user(db, current_user, data_to_update)
 
 
-@router.get('/posts/me',
+@router.get('/me/posts',
             response_model=list[UserPostsShow],
             status_code=status.HTTP_200_OK,
             summary='Get posts that published by current user')
@@ -216,12 +197,12 @@ async def get_user_posts(db: DatabaseDependency,
     return crud.get_current_user_posts(db, current_user, criteria)
 
 
-@router.get('/comments/me',
+@router.get('/me/comments',
             response_model=list[UserCommentsShow],
             status_code=status.HTTP_200_OK,
             summary='Get all comments related to current user')
 async def get_users_comments(db: DatabaseDependency,
-                             current_user: CurrentUserDependency,
+                             current_user: SecurityScopesDependency(scopes=['comment:read']),
                              rate_status: Annotated[str, Query(
                                  description='Get only either liked or disliked comments')] = 'all',
                              skip: int = 0,
@@ -256,6 +237,6 @@ async def reset_password(form: schemas.ResetUserPassword,
     }
     crud.reset_user_password(db, received_data)
     return UJSONResponse(
-        {'success': 'Password has been changed successfully'},
+        content={'success': 'Password has been changed successfully'},
         status_code=status.HTTP_200_OK
     )

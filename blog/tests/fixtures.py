@@ -146,7 +146,7 @@ def create_posts_for_user(user_for_token: User, db: Session):
     post1 = Post(
         title='post_title1',
         body='post_body1',
-        tags=['tag1', 'tag2'],
+        tags='tag1,tag2',
         rating=3,
         is_publish=True,
         category_id=post_category.id,
@@ -155,7 +155,7 @@ def create_posts_for_user(user_for_token: User, db: Session):
     post2 = Post(
         title='post_title2',
         body='post_body2',
-        tags=['tag5', 'tag6', 'tag3', 'tag2'],
+        tags='tag5,tag6,tag3,tag2',
         rating=4,
         is_publish=True,
         category_id=post_category.id,
@@ -169,7 +169,7 @@ def create_posts_for_user(user_for_token: User, db: Session):
 
 
 @pytest.fixture(scope='function')
-def create_comments_for_user(db: Session, create_posts_for_user: list[Post], create_multiple_users: list[User]):
+def create_comments_for_user(db: Session, create_posts_for_user: list[Post]):
     """
     Create comments for posts, owner of which is current authenticated user.
     """
@@ -185,15 +185,20 @@ def create_comments_for_user(db: Session, create_posts_for_user: list[Post], cre
         owner_id=posts[0].owner_id
     )
 
-    users = create_multiple_users
-
     db.add_all([comment1, comment2])
     db.commit()
     db.refresh(comment1)
     db.refresh(comment2)
-    # add likes and dislikes to comments
-    comment1.likes.append(users[0])
-    comment1.likes.append(users[1])
-    comment2.dislikes.append(users[1])
-    comment2.dislikes.append(posts[0].owner)
     yield [comment1, comment2]
+
+
+@pytest.fixture(scope='function')
+def create_post_category(db: Session):
+    """
+    Create category for posts.
+    """
+    category = Category(name='Category name')
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    yield category

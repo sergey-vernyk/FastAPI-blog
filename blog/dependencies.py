@@ -16,25 +16,25 @@ settings = Settings()
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl='/users/token',
     scopes={
-        'post:create': 'Write new post',
-        'category:create': 'Create new category for posts',
-        'post:read': 'Read post information',
-        'post:update': 'Update post information',
-        'post:delete': 'Delete post',
+        'post:create': 'Write a new post',
+        'category:create': 'Create a new category for posts',
+        'post:read': 'Read a post\'s information',
+        'post:update': 'Update a post\'s information',
+        'post:delete': 'Delete a post',
 
-        'comment:update': 'Update comment body',
-        'comment:delete': 'Delete comment',
-        'comment:create': 'Create comment',
-        'comment:rate': 'Set like or dislike for comment',
+        'comment:update': 'Update a comment\'s body',
+        'comment:delete': 'Delete a comment',
+        'comment:create': 'Create a comment',
+        'comment:rate': 'Set like or dislike for a comment',
+        'comment:read': 'Read a comment',
 
-        'user:read': 'Read user information',
-        'user:update': 'Update user information',
-        'user:delete': 'Delete user',
+        'user:read': 'Read a user\'s information',
+        'user:update': 'Update a user\'s information',
+        'user:delete': 'Delete a user',
 
         'me:delete': 'Delete own user',
         'me:update': 'Update own user info',
         'me:read': 'Read own profile information',
-
     }
 )
 

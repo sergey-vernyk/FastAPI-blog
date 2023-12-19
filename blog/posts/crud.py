@@ -1,10 +1,10 @@
 from typing import Type, Union
 
-from fastapi import HTTPException, Query, status
-from sqlalchemy import func
+from fastapi import HTTPException
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
-from accounts import schemas as user_schemas
 from accounts.models import User
 from . import models, schemas
 from .models import Category, Post
@@ -17,11 +17,11 @@ def get_post_by_title(db: Session, post_title: str) -> Union[Post, None]:
     return db.query(models.Post).filter(models.Post.title == post_title).first()
 
 
-def get_post_by_id(db: Session, post_id: int) -> Query:
+def get_post_by_id_query(post_id: int) -> Select:
     """
     Get post by its `post_id`.
     """
-    return db.query(models.Post, func.count(models.Comment.id).label('count_comments')).join(
+    return select(models.Post, func.count(models.Comment.id).label('count_comments')).join(
         models.Category).outerjoin(models.Comment).filter(models.Post.id == post_id).group_by(models.Post.id)
 
 
@@ -34,20 +34,15 @@ def get_category_by_name(db: Session, name: str) -> Union[Category, None]:
 
 def create_post(db: Session,
                 post: schemas.PostCreate,
-                user: user_schemas.UserShow) -> Union[HTTPException, Post]:
+                category_id: int,
+                user: User) -> Union[HTTPException, Post]:
     """
     Create post by passed parameters.
     """
-    category = get_category_by_name(db, post.category)
-    if not category:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Passed category does not exists'
-        )
     post = models.Post(title=post.title,
                        body=post.body,
                        tags=','.join(post.tags),
-                       category_id=category.id,
+                       category_id=category_id,
                        owner_id=user.id)
     db.add(post)
     db.commit()
@@ -56,17 +51,10 @@ def create_post(db: Session,
 
 
 def create_category(db: Session,
-                    category: schemas.CategoryCreate,
-                    user: user_schemas.UserShow) -> Category:
+                    category: schemas.CategoryCreate) -> Category:
     """
     Create post's category by passed parameters.
     """
-    if user.role not in ('admin', 'moderator'):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail='Only admin users be able to perform this action'
-        )
-
     category = models.Category(name=category.name)
     db.add(category)
     db.commit()
@@ -74,11 +62,11 @@ def create_category(db: Session,
     return category
 
 
-def get_posts_query(db: Session, category: str, skip: int = 0, limit: int = 100) -> Query:
+def get_posts_query(category: str, skip: int = 0, limit: int = 100) -> Select:
     """
     Return query for get all posts in the `db` with offset `skip` and `limit`.
     """
-    return db.query(models.Post, func.count(models.Comment.id).label('count_comments')).join(
+    return select(models.Post, func.count(models.Comment.id).label('count_comments')).join(
         models.Category).outerjoin(models.Comment).filter(models.Category.name.icontains(category)).group_by(
         models.Post.id).offset(skip).limit(limit)
 
@@ -90,15 +78,14 @@ def get_post_categories(db: Session, skip: int = 0, limit: int = 100) -> list[Ty
     return db.query(models.Category).offset(skip).limit(limit).all()
 
 
-def update_post(db: Session, post: Post, data_to_update: dict) -> Query:
+def update_post_query(db: Session, post: Post, data_to_update: dict) -> Select:
     """
-    Update post with passed parameters.
+    Update post with passed parameters and return query with the post along extra data.
     """
     db.query(models.Post).filter(models.Post.id == post.id).update(data_to_update)
     db.commit()
-    query = db.query(models.Post, func.count(models.Comment.id).label('count_comments')).join(
+    return select(models.Post, func.count(models.Comment.id).label('count_comments')).join(
         models.Category).outerjoin(models.Comment).filter(models.Post.id == post.id).group_by(models.Post.id)
-    return query
 
 
 def delete_post(db: Session, post: Post) -> None:
@@ -131,7 +118,7 @@ def get_comment_by_id(db: Session, comment_id: int) -> Union[models.Comment, Non
     """
     Obtain comment with `comment_id` from db.
     """
-    return db.query(models.Comment).get(comment_id)
+    return db.get(models.Comment, comment_id)
 
 
 def set_like_or_dislike_for_comment(db: Session, user: User, comment: models.Comment, action: str) -> models.Comment:
@@ -140,12 +127,6 @@ def set_like_or_dislike_for_comment(db: Session, user: User, comment: models.Com
     """
     is_already_set_like = user in comment.likes
     is_already_set_dislike = user in comment.dislikes
-
-    if action not in ('like', 'dislike'):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f'Action is either like or dislike. Action <{action}> was passed'
-        )
 
     if action == 'like':
         # toggle from dislike to like

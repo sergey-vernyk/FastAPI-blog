@@ -82,6 +82,8 @@ class Comment(Base):
     likes = relationship('User', secondary=likes_table)
     dislikes = relationship('User', secondary=dislikes_table)
     post = relationship('Post', back_populates='comments')
+    created = Column('created', DateTime, default=datetime.utcnow)
+    updated = Column('updated', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f'Comment `{self.body[:70]}`'

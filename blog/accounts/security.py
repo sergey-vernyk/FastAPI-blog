@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
-from typing import Union
+from typing import Union, NoReturn
 
+from fastapi import HTTPException, status
 from jose import jwt
 from passlib.context import CryptContext
 
@@ -52,3 +53,17 @@ def get_token_data(token: str) -> TokenData:
     scopes = jwt_decode.get('scopes')
     token_data = TokenData(username=username, scopes=scopes)
     return token_data
+
+
+def verify_password_or_exception(hashed_password: str, plain_password: str) -> Union[NoReturn, None]:
+    """
+    Returns None if passwords verification is successfully,
+    and raise an exception otherwise.
+    """
+    if not verify_password(plain_password, hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Incorrect password',
+            headers={'WWW-Authenticate': 'Bearer'}
+        )
+    return None

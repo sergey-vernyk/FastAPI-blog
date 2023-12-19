@@ -9,8 +9,7 @@ from posts.schemas import UserCommentsShow, UserPostsShow
 from .fixtures import *
 
 
-# TODO make tests when user is not authenticated and tests when user follow to an endpoint without particular scopes
-def test_create_user(client: TestClient):
+def test_create_user_success(client: TestClient) -> None:
     """
     Test create user with passed parameters.
     """
@@ -26,9 +25,25 @@ def test_create_user(client: TestClient):
     assert data['is_active'] is True
 
 
-def test_read_all_users(client: TestClient, user_for_token: User, get_token: str, create_multiple_users: list[User]):
+def test_create_user_if_email_already_exist(client: TestClient, create_multiple_users: list[User]) -> None:
     """
-    Test read all users from a database.
+    Test create user if passed email was already registered by another user.
+    """
+    current_email = USER_DATA['email']
+    # change email for user that will be created on email that had been already registered
+    USER_DATA['email'] = create_multiple_users[0].email
+    response = client.post(url='/users/create', json=USER_DATA)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json() == {'detail': 'Email already registered'}
+    USER_DATA['email'] = current_email  # replace previous email to avoid errors
+
+
+def test_read_all_users_with_particular_scope(client: TestClient,
+                                              user_for_token: User,
+                                              get_token: str,
+                                              create_multiple_users: list[User]) -> None:
+    """
+    Test read all users if user has appropriate access scope.
     """
     response = client.get(
         url='/users/read_all',
@@ -48,9 +63,25 @@ def test_read_all_users(client: TestClient, user_for_token: User, get_token: str
     assert UserShow(**jsonable_encoder(create_multiple_users[1])) == UserShow(**user_data3)
 
 
-def test_read_user_by_id(user_for_token: User, client: TestClient, get_token: str):
+def test_read_all_users_without_particular_scope(client: TestClient, create_multiple_users: list[User]) -> None:
     """
-    Test read user by its id.
+    Test try read all users if user has not appropriate access scope.
+    """
+    # token withot needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    response = client.get(
+        url='/users/read_all',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_read_user_by_id_with_particular_scope(user_for_token: User, client: TestClient, get_token: str) -> None:
+    """
+    Test read user by its id if user has appropriate access scope.
     """
     response = client.get(
         url=f'users/read/{user_for_token.id}',
@@ -63,9 +94,41 @@ def test_read_user_by_id(user_for_token: User, client: TestClient, get_token: st
     assert UserShow(**response_data) == UserShow(**user_data)
 
 
-def test_read_users_me(user_for_token: User, client: TestClient, get_token: str):
+def test_read_user_by_id_without_particular_scope(user_for_token: User,
+                                                  create_multiple_users: list[User],
+                                                  client: TestClient) -> None:
     """
-    Test read info about current authenticated user.
+    Test read user by its id if has not appropriate access scope.
+    """
+    # token without needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    response = client.get(
+        url=f'users/read/{user_for_token.id}',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_read_user_by_id_if_passed_wrong_user_id(get_token: str, client: TestClient) -> None:
+    """
+    Test read user by its id if was passed id that not matched in db.
+    """
+    response = client.get(
+        url='users/read/150',
+        headers={'Authorization': f'Bearer {get_token}'}
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json() == {'detail': 'User with passed id does not exists'}
+
+
+def test_read_users_me_if_user_is_active(user_for_token: User, client: TestClient, get_token: str) -> None:
+    """
+    Test read info about current authenticated user is active now,5
+    and has appropriate scope for this action.
     """
     response = client.get(
         url='users/me',
@@ -78,9 +141,46 @@ def test_read_users_me(user_for_token: User, client: TestClient, get_token: str)
     assert UserShow(**response.json()) == UserShow(**user_data)
 
 
-def test_delete_me(user_for_token: User, client: TestClient, get_token: str, db: Session):
+def test_read_users_me_if_user_is_inactive(user_for_token: User,
+                                           client: TestClient,
+                                           get_token: str,
+                                           db: Session) -> None:
     """
-    Test delete current authenticated user.
+    Test read info about current authenticated user is inactive.
+    """
+    # make user inactive
+    db.query(User).filter(User.id == user_for_token.id).update({'is_active': False})
+    response = client.get(
+        url='users/me',
+        headers={'Authorization': f'Bearer {get_token}'}
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json() == {'detail': 'Inactive user'}
+
+
+def test_read_users_me_without_particular_scope(create_multiple_users: list[User], client: TestClient) -> None:
+    """
+    Test read info about current authenticated user has not appropriate access scope.
+    """
+    # token without needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    response = client.get(
+        url='users/me',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_delete_me_with_particular_scope(user_for_token: User,
+                                         client: TestClient,
+                                         get_token: str,
+                                         db: Session) -> None:
+    """
+    Test delete current authenticated user if user has appropriate access scope.
     """
     response = client.delete(
         url='/users/delete/me',
@@ -92,9 +192,29 @@ def test_delete_me(user_for_token: User, client: TestClient, get_token: str, db:
     assert db_user is None, 'Current user must be deleted'
 
 
-def test_delete_user_by_id(create_multiple_users: list[User], client: TestClient, get_token: str, db: Session):
+def test_delete_me_without_particular_scope(create_multiple_users: list[User], client: TestClient) -> None:
     """
-    Test delete user from database by `user_id`.
+    Test delete current authenticated user if user has not appropriate access scope.
+    """
+    # token without needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    response = client.delete(
+        url='/users/delete/me',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_delete_user_by_id_with_particular_scope(create_multiple_users: list[User],
+                                                 client: TestClient,
+                                                 get_token: str,
+                                                 db: Session) -> None:
+    """
+    Test delete user from database by `user_id` if user,
+    which will delete has appropriate access scope.
     """
     response = client.delete(
         url=f'/users/delete/{create_multiple_users[0].id}',
@@ -106,9 +226,40 @@ def test_delete_user_by_id(create_multiple_users: list[User], client: TestClient
     assert db_user is None, f'User with id {create_multiple_users[0].id} must be deleted'
 
 
-def test_update_user_info(client: TestClient, get_token: str, user_for_token: User):
+def test_delete_user_by_id_without_particular_scope(create_multiple_users: list[User], client: TestClient) -> None:
     """
-    Test update info for current authenticated user.
+    Test delete user from database by `user_id`, if user,
+    which will delete has not appropriate access scope.
+    """
+    # token without needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    response = client.delete(
+        url=f'/users/delete/{create_multiple_users[1].id}',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_delete_user_by_id_if_passed_wrong_user_id(client: TestClient, get_token: str) -> None:
+    """
+    Test delete user from database by `user_id`, if passed user id does not exist.
+    """
+    # token without needed scope
+    response = client.delete(
+        url='/users/delete/150',
+        headers={'Authorization': f'Bearer {get_token}'}
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json() == {'detail': 'User with passed id does not exists'}
+
+
+def test_update_user_info_with_particular_scope(client: TestClient, get_token: str, user_for_token: User) -> None:
+    """
+    Test update info for current authenticated user if user has appropriate access scope.
     """
 
     data_to_update = {
@@ -126,7 +277,28 @@ def test_update_user_info(client: TestClient, get_token: str, user_for_token: Us
     assert user_for_token.date_of_birth == datetime.strptime(data_to_update['date_of_birth'], '%Y-%m-%d').date()
 
 
-def test_reset_password_success(client: TestClient, user_for_token: User):
+def test_update_user_info_without_particular_scope(client: TestClient, create_multiple_users: list[User]) -> None:
+    """
+    Test update info for current authenticated user if user has not appropriate access scope.
+    """
+    # token without needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    data_to_update = {
+        'date_of_birth': '1999-03-12',
+        'last_name': 'New Surname'
+    }
+    response = client.patch(
+        url='/users/me/update',
+        headers={'Authorization': f'Bearer {token}'},
+        json=data_to_update
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_reset_password_success(client: TestClient, user_for_token: User) -> None:
     """
     Test reset user's account password using username or email.
     """
@@ -159,9 +331,9 @@ def test_reset_password_success(client: TestClient, user_for_token: User):
     assert response.json() == {'success': 'Password has been changed successfully'}
 
 
-def test_reset_password_fail(client: TestClient):
+def test_reset_password_fail(client: TestClient) -> None:
     """
-    Test reset user's account password, but when was not passed email or username.
+    Test reset user's account password, when was not passed email or username.
     """
     data_to_reset = {
         'password': 'new_super_password'
@@ -176,7 +348,10 @@ def test_reset_password_fail(client: TestClient):
     assert response.json() == {'detail': 'Username or email was not passed'}
 
 
-def test_login_for_token(client: TestClient, create_multiple_users: list[User]):
+def test_login_for_token(client: TestClient, create_multiple_users: list[User]) -> None:
+    """
+    Test get access token with scope.
+    """
     user_for_token = create_multiple_users[0]
 
     form_data = {
@@ -201,7 +376,7 @@ def test_login_for_token(client: TestClient, create_multiple_users: list[User]):
     assert token_data.scopes == [form_data['scope']]
 
 
-def test_get_user_posts_without_filter(client: TestClient, get_token: str, create_posts_for_user: list[Post]):
+def test_get_user_posts_without_filter(client: TestClient, get_token: str, create_posts_for_user: list[Post]) -> None:
     """
     Test get all posts, which were written by current authenticated user without using filter.
     """
@@ -220,7 +395,7 @@ def test_get_user_posts_without_filter(client: TestClient, get_token: str, creat
     assert UserPostsShow(**response_data[1]) == UserPostsShow(**existed_post2_data)
 
 
-def test_get_user_posts_with_filter(client: TestClient, get_token: str, create_posts_for_user: list[Post]):
+def test_get_user_posts_with_filter(client: TestClient, get_token: str, create_posts_for_user: list[Post]) -> None:
     """
     Test get all posts, which were written by current authenticated user with using filter.
     """
@@ -261,9 +436,29 @@ def test_get_user_posts_with_filter(client: TestClient, get_token: str, create_p
     assert len(response_data) == 2, 'Must be two posts'
 
 
-def test_get_users_comment(client: TestClient, create_comments_for_user: list[Comment], get_token: str):
+def test_get_user_posts_without_particular_scope(client: TestClient, create_multiple_users: list[User]) -> None:
     """
-    Test get all posts of current authenticated user.
+    Test get all posts, which were written by current authenticated,
+    if user has not appropriate access scope.
+    """
+    # token without needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    response = client.get(
+        url='/users/posts/me',
+        headers={'Authorization': f'Bearer {token}'},
+        params={'apply_filter': False}
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_get_users_comment_with_particular_scope(client: TestClient,
+                                                 create_comments_for_user: list[Comment],
+                                                 get_token: str) -> None:
+    """
+    Test get all posts of current authenticated user is user has appropriate access scope.
     """
     response = client.get(
         url='/users/comments/me',
@@ -277,3 +472,20 @@ def test_get_users_comment(client: TestClient, create_comments_for_user: list[Co
     # check whether response comment data equal data of already created comments
     assert UserCommentsShow(**response_data[0]) == UserCommentsShow(**jsonable_encoder(create_comments_for_user[0]))
     assert UserCommentsShow(**response_data[1]) == UserCommentsShow(**jsonable_encoder(create_comments_for_user[1]))
+
+
+def test_get_users_comment_without_particular_scope(client: TestClient, create_multiple_users: list[User]) -> None:
+    """
+    Test get all posts of current authenticated user if user has not appropriate access scope.
+    """
+    # token without needed scope
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    response = client.get(
+        url='/users/comments/me',
+        headers={'Authorization': f'Bearer {token}'},
+        params={'rate_status': 'all'}
+    )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {'detail': 'Not enough permissions'}

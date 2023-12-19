@@ -6,4 +6,4 @@ settings = Settings()
 
 SQLALCHEMY_DATABASE_URL = settings.database_url_test
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True)
+engine = create_engine(SQLALCHEMY_DATABASE_URL)

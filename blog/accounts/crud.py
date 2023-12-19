@@ -1,6 +1,7 @@
 from typing import Type, Union
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from posts.models import Post, Category, Comment
@@ -19,7 +20,7 @@ def get_users(db: Session, skip: int = 0, limit: int = 100) -> list[Type[User]]:
     """
     Obtain users from db with `limit` and offset `skip`.
     """
-    return db.query(models.User).offset(skip).limit(limit).all()
+    return db.query(models.User).order_by('id').offset(skip).limit(limit).all()
 
 
 def get_user_by_id(db: Session, user_id: int) -> Union[User, None]:
@@ -81,18 +82,19 @@ def update_user(db: Session, user: User, data_to_update: dict) -> User:
 def get_current_user_posts(db: Session, user: User, criteria: Union[dict, None]) -> list[Post]:
     """
     Retrieve all posts in which `user` as owner.
+    Result can be different depends on `criteria` data if any.
     """
     if criteria is None:
-        statement = db.query(Post).filter(Post.owner.has(User.id == user.id))
+        statement = select(Post).join(Category).filter(Post.owner.has(User.id == user.id))
     else:
-        statement = db.query(Post).filter(
+        statement = select(Post).join(Category).filter(
             Post.owner.has(User.id == user.id),
             Post.tags.icontains(','.join(criteria['tags'])),
             Category.name.icontains(criteria['category']),
-            Post.rating >= criteria['rating'],
-            Post.is_publish == criteria['is_publish']).distinct()
+            Post.rating.op('>=')(criteria['rating']),
+            Post.is_publish.is_(criteria['is_publish'])).distinct()
     result = db.execute(statement)
-    return list(result.scalars().all())
+    return list(result.scalars())
 
 
 def get_comments_for_user(db: Session,
@@ -104,16 +106,14 @@ def get_comments_for_user(db: Session,
     Obtain comments whom owner is `user`.
     The choice is obtained all user's comment or either only liked comment or disliked.
     """
-    comments = db.query(Comment).join(User).filter(Comment.owner.has(User.id == user.id)).order_by('id')
+    comments = db.query(Comment).join(User).filter(Comment.owner.has(User.id == user.id)).order_by('created')
 
     if status == 'like':
-        comments = comments.filter(Comment.likes).offset(skip).limit(limit).all()  # get comments which got like
+        comments = comments.filter(Comment.likes)  # get comments which got like
     elif status == 'dislike':
-        comments = comments.filter(Comment.dislikes).offset(skip).limit(limit).all()  # get comments which got dislike
-    else:
-        comments = comments.offset(skip).limit(limit).all()  # get all comments
+        comments = comments.filter(Comment.dislikes)  # get comments which got dislike
 
-    return comments
+    return comments.offset(skip).limit(limit).all()
 
 
 def reset_user_password(db: Session, data: dict) -> None:
