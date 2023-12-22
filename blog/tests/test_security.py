@@ -5,7 +5,7 @@ from jose import jwt
 from pytest import raises
 
 from accounts.schemas import TokenData
-from accounts.security import verify_password_or_exception, get_token_data
+from common.security import verify_password_or_exception, get_token_data
 from config import Settings
 from .fixtures import *
 

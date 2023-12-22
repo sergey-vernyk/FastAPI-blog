@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class UserCreate(BaseModel):
@@ -15,22 +15,25 @@ class UserCreate(BaseModel):
     email: str
     password: str = Field(min_length=10)
     date_of_birth: Optional[date] = None
-    # role: str = Field(default='regular-user')
+    about: Optional[str] = Field(default=None, max_length=255)
 
 
 class UserShow(BaseModel):
     """
     Information which displays while obtaining user.
     """
+
     id: int
-    username: str = Field(max_length=30)
-    first_name: str = Field(max_length=50)
+    username: str
+    first_name: str
     last_name: Optional[str]
+    image: HttpUrl | None
     date_of_birth: date
     gender: str
-    email: str = Field()
+    email: str
     role: str
     is_active: bool
+    about: str | None
 
     class Config:
         """
@@ -47,11 +50,13 @@ class UserUpdate(BaseModel):
     username: Optional[str] = Field(max_length=30, default=None)
     first_name: Optional[str] = Field(max_length=50, default=None)
     last_name: Optional[str] = Field(max_length=50, default=None)
+    image: Optional[str] = None
     gender: Optional[str] = Field(max_length=6, default=None)
     email: Optional[str] = Field(examples=['example@example.com'], default=None)
     hashed_password: Optional[str] = Field(min_length=10, default=None)
     date_of_birth: Optional[date] = Field(examples=['yyyy-mm-dd'], default=None)
     is_active: Optional[bool] = Field(default=None)
+    about: Optional[str] = Field(max_length=255, default=None)
 
 
 class UserShowBriefly(BaseModel):

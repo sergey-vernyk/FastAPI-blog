@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy_utils.functions import create_database, database_exists
 
 from accounts.models import User
-from accounts.security import get_password_hash, create_access_token
+from common.security import get_password_hash, create_access_token
 from db_connection import Base
 from dependencies import get_db
 from dependencies import oauth2_scheme

@@ -1,12 +1,17 @@
+import secrets
 from datetime import datetime, timedelta
-from typing import Union, NoReturn
+from typing import Union, Annotated
 
 from fastapi import HTTPException, status
+from fastapi.param_functions import Form
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
 from passlib.context import CryptContext
 
 from accounts.schemas import TokenData
 from config import Settings
+
+DEFAULT_ACCESS_SCOPES = 'me:read me:update me:delete post:read post:delete post:create comment:read'
 
 settings = Settings()
 
@@ -55,7 +60,7 @@ def get_token_data(token: str) -> TokenData:
     return token_data
 
 
-def verify_password_or_exception(hashed_password: str, plain_password: str) -> Union[NoReturn, None]:
+def verify_password_or_exception(hashed_password: str, plain_password: str) -> None:
     """
     Returns None if passwords verification is successfully,
     and raise an exception otherwise.
@@ -66,4 +71,32 @@ def verify_password_or_exception(hashed_password: str, plain_password: str) -> U
             detail='Incorrect password',
             headers={'WWW-Authenticate': 'Bearer'}
         )
-    return None
+
+
+class OAuthFormWithDefaultScopes(OAuth2PasswordRequestForm):
+    """
+    Override constructor of `OAuth2PasswordRequestForm`
+    in order to add several access scopes by default.
+    """
+
+    def __init__(self,
+                 *,
+                 username: Annotated[str, Form()],
+                 password: Annotated[str, Form()],
+                 grant_type: Annotated[Union[str, None], Form(pattern="password")] = None,
+                 scope: Annotated[str, Form()] = DEFAULT_ACCESS_SCOPES,
+                 client_id: Annotated[Union[str, None], Form()] = None,
+                 client_secret: Annotated[Union[str, None], Form()] = None) -> None:
+        super().__init__(
+            username=username, password=password,
+            grant_type=grant_type, scope=scope,
+            client_id=client_id, client_secret=client_secret
+        )
+
+
+def generate_csrf_token(n_bytes: Union[int, None] = None) -> str:
+    """
+    Returns CSRF token which consists from `n_bytes` random bytes,
+    or returns reasonable default CSRF token if `n_bytes` is None.
+    """
+    return secrets.token_urlsafe(n_bytes)

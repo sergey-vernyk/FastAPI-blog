@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
 EXPOSE 8000
-WORKDIR /code
+WORKDIR /blog
 ARG user=blog_admin
 
 # packages for connection to postgresql and other nedded packages
@@ -29,6 +29,6 @@ RUN pip install -r requirements.txt
 ENV PATH "$PATH:/home/$user/.local/bin"
 
 # copy source code to docker
-COPY . /code
+COPY . /blog
 # start uvicorn server
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,6 +1,7 @@
+from secrets import compare_digest
 from typing import Annotated, Type
 
-from fastapi import Depends, HTTPException, status, Security
+from fastapi import Depends, HTTPException, Security, Cookie, Header, status
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 from jose import JWTError, jwt
 from pydantic import ValidationError
@@ -98,3 +99,33 @@ def SecurityScopesDependency(scopes: list) -> Type[models.User]:
     Return user with security metadata dependency taking in account passed `scopes`.
     """
     return Annotated[models.User, Security(get_current_user, scopes=scopes)]
+
+
+def verify_csrf_token(cookie_token: str = Cookie(None,
+                                                 include_in_schema=False,
+                                                 alias='csrftoken'),
+                      header_token: str = Header(None,
+                                                 convert_underscores=False,
+                                                 include_in_schema=False,
+                                                 alias='X-CSRFToken')) -> None:
+    """
+    Compare CSRF tokens from request header while client making request,
+    and from cookies on client side. Raise an exception if tokens are not equals.
+    """
+    csrf_exception = HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail='CSRF token missing or incorrect'
+    )
+
+    if not all([header_token, cookie_token]):
+        raise csrf_exception
+
+    from_header_bytes = str.encode(header_token, encoding='utf-8')
+    from_cookie_bytes = str.encode(cookie_token, encoding='utf-8')
+    are_tokens_equals = compare_digest(from_header_bytes, from_cookie_bytes)
+
+    if not are_tokens_equals:
+        raise csrf_exception
+
+
+CsrfVerifyDependency = Depends(verify_csrf_token)

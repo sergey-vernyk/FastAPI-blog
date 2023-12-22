@@ -4,52 +4,54 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from common import security
 from posts.models import Post, Category, Comment
-from . import models, schemas, security
 from .models import User
+from .schemas import UserCreate
 
 
 def get_user_by_email(db: Session, email: str) -> Union[User, None]:
     """
     Obtain user by its `email` address.
     """
-    return db.query(models.User).filter(models.User.email == email).first()
+    return db.query(User).filter(User.email == email).first()
 
 
 def get_users(db: Session, skip: int = 0, limit: int = 100) -> list[Type[User]]:
     """
     Obtain users from db with `limit` and offset `skip`.
     """
-    return db.query(models.User).order_by('id').offset(skip).limit(limit).all()
+    return db.query(User).order_by('id').offset(skip).limit(limit).all()
 
 
 def get_user_by_id(db: Session, user_id: int) -> Union[User, None]:
     """
     Obtain user by its `user_id`
     """
-    return db.query(models.User).filter(models.User.id == user_id).first()
+    return db.query(User).filter(User.id == user_id).first()
 
 
 def get_user_by_username(db: Session, username: str) -> Union[User, None]:
     """
     Obtain user by its `username`.
     """
-    return db.query(models.User).filter(models.User.username == username).first()
+    return db.query(User).filter(User.username == username).first()
 
 
-def create_user(db: Session, user: schemas.UserCreate) -> User:
+def create_user(db: Session, user: UserCreate) -> User:
     """
     Create user by passed parameters.
     """
     hashed_password = security.get_password_hash(user.password)
     # Create a SQLAlchemy model instance with your data
-    user = models.User(email=user.email,
-                       hashed_password=hashed_password,
-                       first_name=user.first_name,
-                       last_name=user.last_name,
-                       gender=user.gender,
-                       username=user.username,
-                       date_of_birth=user.date_of_birth)
+    user = User(email=user.email,
+                hashed_password=hashed_password,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                gender=user.gender,
+                username=user.username,
+                date_of_birth=user.date_of_birth,
+                about=user.about)
     db.add(user)  # `add` that instance object to database session
     db.commit()  # save changes to the database
     db.refresh(user)  # refresh instance
@@ -73,7 +75,7 @@ def update_user(db: Session, user: User, data_to_update: dict) -> User:
     if 'hashed_password' in data_to_update:
         data_to_update['hashed_password'] = security.get_password_hash(data_to_update['hashed_password'])
 
-    db.query(models.User).filter(models.User.username == user.username).update(data_to_update)
+    db.query(User).filter(User.username == user.username).update(data_to_update)
     db.commit()
     db.refresh(user)
     return user
@@ -97,16 +99,13 @@ def get_current_user_posts(db: Session, user: User, criteria: Union[dict, None])
     return list(result.scalars())
 
 
-def get_comments_for_user(db: Session,
-                          user: User,
-                          status: str,
-                          skip: int = 0,
-                          limit: int = 100) -> list[Type[Comment]]:
+def get_comments_for_user(db: Session, user: User, status: str, skip: int = 0, limit: int = 100) -> list[Type[Comment]]:
     """
     Obtain comments whom owner is `user`.
     The choice is obtained all user's comment or either only liked comment or disliked.
     """
-    comments = db.query(Comment).join(User).filter(Comment.owner.has(User.id == user.id)).order_by('created')
+    comments = db.query(Comment).join(
+        User).filter(Comment.owner.has(User.id == user.id)).order_by('created')
 
     if status == 'like':
         comments = comments.filter(Comment.likes)  # get comments which got like
@@ -120,7 +119,6 @@ def reset_user_password(db: Session, data: dict) -> None:
     """
     Reset user's account password.
     """
-    user = None
     # select between email or username (depends upon what was passed)
     if data['email']:
         user = get_user_by_email(db, data.get('email'))
@@ -134,5 +132,5 @@ def reset_user_password(db: Session, data: dict) -> None:
 
     # hashing plain password
     hashed_password = security.get_password_hash(data['password'])
-    db.query(User).filter(models.User.id == user.id).update({'hashed_password': hashed_password})
+    db.query(User).filter(User.id == user.id).update({'hashed_password': hashed_password})
     db.commit()

@@ -1,6 +1,7 @@
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import RowMapping
 
+from accounts.models import User
 from accounts.schemas import UserShowBriefly
 from posts.schemas import CategoryCreate, CommentShow, PostShow
 
@@ -32,3 +33,11 @@ def create_post_show_instance_with_extra_attributes(post_row: RowMapping) -> Pos
         'tags': post.tags.split(',')
     })
     return PostShow(**data_for_post_show)
+
+
+def is_object_owner_or_staff_user(obj, user: User) -> bool:
+    """
+    Returns `True` if `user` is `obj`'s owner or `user` is staff user,
+    or returns `False` otherwise.
+    """
+    return user.id == obj.owner_id or user.role in ('admin', 'moderator')

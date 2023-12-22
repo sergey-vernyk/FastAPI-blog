@@ -1,7 +1,8 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
-from routers import posts_router, users_router
 from db_connection import Base, engine
+from routers import posts_router, users_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -17,3 +18,6 @@ app = FastAPI(swagger_ui_parameters={
     version='0.1')
 app.include_router(router=users_router.router, prefix='/users', tags=['users'])
 app.include_router(router=posts_router.router, prefix='/posts', tags=['posts'])
+
+# mount directory for static files
+app.mount('/static', StaticFiles(directory='blog/static'), name='static')

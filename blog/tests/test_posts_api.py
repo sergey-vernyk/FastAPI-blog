@@ -2,7 +2,7 @@ from fastapi import status
 from fastapi.encoders import jsonable_encoder
 
 from accounts.schemas import UserShowBriefly
-from accounts.security import get_token_data
+from common.security import get_token_data
 from posts.schemas import (
     PostShow, PostUpdate,
     CategoryCreate, CommentShow,
@@ -16,6 +16,8 @@ POST_DATA = {
     'tags': ['tag1', 'tag2']
 }
 
+TEST_CSRF_TOKEN = 'bvhahncoioerucmigcniquw2cewqc'
+
 
 def test_create_post_with_authorization(client: TestClient,
                                         create_post_category: Category,
@@ -25,10 +27,15 @@ def test_create_post_with_authorization(client: TestClient,
     Test create post behalf current authenticated user.
     """
     POST_DATA.update(category=create_post_category.name)
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url='/posts/create',
         json=POST_DATA,
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_201_CREATED
@@ -51,13 +58,36 @@ def test_create_post_without_authentication(client: TestClient,
     """
     POST_DATA.update(category=create_post_category.name,
                      owner=user_for_token.username)
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url='/posts/create',
-        json=POST_DATA
+        json=POST_DATA,
+        headers={'X-CSRFToken': TEST_CSRF_TOKEN}
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json() == {'detail': 'Not authenticated'}
+
+
+def test_create_post_if_csrf_tokens_mismatch(client: TestClient,
+                                             create_post_category: Category,
+                                             user_for_token: User) -> None:
+    """
+    Test create post if csrf tokens in request header and client cookies are mismatch
+    """
+    POST_DATA.update(category=create_post_category.name,
+                     owner=user_for_token.username)
+    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
+
+    response = client.post(
+        url='/posts/create',
+        json=POST_DATA,
+        headers={'X-CSRFToken': TEST_CSRF_TOKEN}
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
 def test_create_post_without_particular_scopes(client: TestClient,
@@ -70,11 +100,16 @@ def test_create_post_without_particular_scopes(client: TestClient,
                      owner=create_multiple_users[0].username)
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url='/posts/create',
         json=POST_DATA,
         # token without particular scope
-        headers={'Authorization': f'Bearer {token}'}
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -85,9 +120,14 @@ def test_create_category_with_authorization(client: TestClient, get_token: str) 
     """
     Test create category for posts.
     """
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url='/posts/category/create',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'name': 'Computers'}
     )
 
@@ -99,8 +139,11 @@ def test_create_category_without_authentication(client: TestClient) -> None:
     """
     Test create category for posts without authentication.
     """
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url='/posts/category/create',
+        headers={'X-CSRFToken': TEST_CSRF_TOKEN},
         json={'name': 'Computers'}
     )
 
@@ -114,14 +157,38 @@ def test_create_category_without_particular_scopes(client: TestClient, create_mu
     """
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url='/posts/category/create',
         json={'name': 'Computers'},
-        headers={'Authorization': f'Bearer {token}'}
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_create_category_if_csrf_tokens_mismatch(client: TestClient, get_token: str) -> None:
+    """
+    Test create category for posts if csrf tokens in request header and client cookies are mismatch.
+    """
+    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
+
+    response = client.post(
+        url='/posts/category/create',
+        json={'name': 'Computers'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
 def test_read_post(client: TestClient, create_posts_for_user: list[Post]) -> None:
@@ -193,9 +260,14 @@ def test_update_post_with_authorization(client: TestClient,
                      tags=post_data['tags'].split(','),
                      category=post_for_update.category.name)
     post_update_body = PostUpdate(**post_data)
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    
     response = client.put(
         url=f'/posts/update/{post_for_update.id}',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json=post_update_body.model_dump()
     )
 
@@ -229,13 +301,40 @@ def test_update_post_without_authentication(client: TestClient,
                      tags=post_data['tags'].split(','),
                      category=post_for_update.category.name)
     post_update_body = PostUpdate(**post_data)
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.put(
         url=f'/posts/update/{post_for_update.id}',
-        json=post_update_body.model_dump()
+        json=post_update_body.model_dump(),
+        headers={'X-CSRFToken': TEST_CSRF_TOKEN}
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json() == {'detail': 'Not authenticated'}
+
+
+def test_update_post_if_csrf_tokens_mismatch(client: TestClient,
+                                             create_posts_for_user: list[Post]) -> None:
+    """
+    Update post by passed post_id if csrf tokens in request header and client cookies are mismatch.
+    """
+    post_for_update = create_posts_for_user[0]
+    post_data = jsonable_encoder(post_for_update)
+    post_data.update(rating=4,
+                     body='post_body_updated',
+                     tags=post_data['tags'].split(','),
+                     category=post_for_update.category.name)
+    post_update_body = PostUpdate(**post_data)
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
+    response = client.put(
+        url=f'/posts/update/{post_for_update.id}',
+        json=post_update_body.model_dump(),
+        headers={'X-CSRFToken': 'wrong_csrf_token'}
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
 def test_delete_post_with_authorization(client: TestClient,
@@ -246,9 +345,14 @@ def test_delete_post_with_authorization(client: TestClient,
     Test delete post if user has appropriate authorization scope, and it is a post's owner.
     """
     post_for_delete = create_posts_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.delete(
         url=f'posts/delete/{post_for_delete.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -266,9 +370,14 @@ def test_delete_post_not_by_its_owner(client: TestClient,
     user = create_multiple_users[0]
     token = create_access_token(data={'sub': user.username, 'scopes': ['post:delete']},
                                 expires_delta=timedelta(minutes=5))
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.delete(
         url=f'posts/delete/{post_for_delete.id}',
-        headers={'Authorization': f'Bearer {token}'}
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -287,13 +396,44 @@ def test_delete_post_by_staff_users(client: TestClient,
     db.query(User).filter(User.username == username_from_token).update({'role': 'moderator'})
 
     post_for_delete = create_posts_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.delete(
         url=f'posts/delete/{post_for_delete.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
     assert db.get(Post, post_for_delete.id) is None
+
+
+def test_delete_post_not_by_its_owner_if_csrf_tokens_mismatch(client: TestClient,
+                                                              create_multiple_users: list[User],
+                                                              create_posts_for_user: list[Post]) -> None:
+    """
+    Test delete post if user is not the owner of this post,
+    and if csrf tokens in request header and client cookies are mismatch.
+    """
+    post_for_delete = create_posts_for_user[1]
+    # user allow to delete post, but it is not post's owner
+    user = create_multiple_users[0]
+    token = create_access_token(data={'sub': user.username, 'scopes': ['post:delete']},
+                                expires_delta=timedelta(minutes=5))
+    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
+
+    response = client.delete(
+        url=f'posts/delete/{post_for_delete.id}',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
 def test_create_comment_with_authorization(client: TestClient,
@@ -304,9 +444,14 @@ def test_create_comment_with_authorization(client: TestClient,
     Test create comment for any post if user is authorized with appropriate scope.
     """
     post_for_comment = create_posts_for_user[0]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url=f'/posts/create_comment/{post_for_comment.id}',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': f'Comment for post with id {post_for_comment.id}'}
     )
 
@@ -330,9 +475,13 @@ def test_create_comment_without_particular_scopes(client: TestClient,
     # create token without permissions, that allow to create comment
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
     response = client.post(
         url=f'/posts/create_comment/{post_for_comment.id}',
-        headers={'Authorization': f'Bearer {token}'},
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': f'Comment for post with id {post_for_comment.id}'}
     )
 
@@ -344,14 +493,42 @@ def test_create_comment_if_post_does_not_exist(client: TestClient, get_token: st
     """
     Test create comment if post with passed id does not exist.
     """
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
     response = client.post(
         url='/posts/create_comment/150',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': 'Comment for post with id 150}'}
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json() == {'detail': 'Post with passed id does not exists'}
+
+
+def test_create_comment_if_csrf_tokens_mismatch(client: TestClient,
+                                                create_posts_for_user: list[Post],
+                                                create_multiple_users: list[User]) -> None:
+    """
+    Test create comment if csrf tokens in request header and client cookies are mismatch.
+    """
+    post_for_comment = create_posts_for_user[0]
+    # create token without permissions, that allow to create comment
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
+    response = client.post(
+        url=f'/posts/create_comment/{post_for_comment.id}',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
+        json={'body': f'Comment for post with id {post_for_comment.id}'}
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
 def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
@@ -360,11 +537,15 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     """
     Test set like or dislike for comment with comment_id.
     """
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
     comment_for_set = create_comments_for_user[1]
     # set like
     response = client.post(
         url=f'/posts/comment/like/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -375,7 +556,10 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     # set like again
     response = client.post(
         url=f'/posts/comment/like/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -386,7 +570,10 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     # set dislike
     response = client.post(
         url=f'/posts/comment/dislike/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -397,7 +584,10 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     # set dislike again
     response = client.post(
         url=f'/posts/comment/dislike/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -408,7 +598,10 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     # set like
     response = client.post(
         url=f'/posts/comment/like/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -419,7 +612,10 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     # set dislike
     response = client.post(
         url=f'/posts/comment/dislike/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -430,7 +626,10 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     # set like
     response = client.post(
         url=f'/posts/comment/like/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -443,9 +642,14 @@ def test_set_comment_like_or_dislike_if_post_does_not_exist(client: TestClient, 
     """
     Test set like or dislike if passed comment does not exist by its id.
     """
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         url='/posts/comment/like/155',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -459,14 +663,41 @@ def test_set_comment_like_or_dislike_if_passed_wrong_command(client: TestClient,
     Test set like or dislike if passed neither like nor dislike as action.
     """
     comment_for_set = create_comments_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.post(
         # will pass `wrong` command instead of either `like` or `dislike`
         url=f'/posts/comment/wrong/{comment_for_set.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.json() == {'detail': 'Action is either like or dislike. Action <wrong> was passed'}
+
+
+def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client: TestClient,
+                                                             get_token: str,
+                                                             create_comments_for_user: list[Comment]) -> None:
+    """
+    Test set like or dislike for comment with comment_id, 
+    if csrf tokens in request header and client cookies are mismatch.
+    """
+    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
+    comment_for_set = create_comments_for_user[1]
+    # set like
+    response = client.post(
+        url=f'/posts/comment/like/{comment_for_set.id}',
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
 def test_update_comment_with_particular_scope(client: TestClient,
@@ -478,9 +709,14 @@ def test_update_comment_with_particular_scope(client: TestClient,
     """
     # this comment was posted by user from `get_token` token data
     comment_for_update = create_comments_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.put(
         url=f'/posts/comment/update/{comment_for_update.id}',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
     )
 
@@ -501,9 +737,14 @@ def test_update_comment_if_user_is_staff(client: TestClient,
     db.query(User).filter(User.username == username_from_token).update({'role': 'moderator'})
     # this comment was posted by user from `get_token` token data
     comment_for_update = create_comments_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.put(
         url=f'/posts/comment/update/{comment_for_update.id}',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
     )
 
@@ -524,10 +765,14 @@ def test_update_comment_if_user_is_not_staff_or_owner(client: TestClient,
     # change owner for comment
     db.query(Comment).update({'owner_id': create_multiple_users[1].id})
     create_comments_for_user[1].owner = create_multiple_users[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.put(
         url=f'/posts/comment/update/{comment_for_update.id}',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
     )
 
@@ -537,7 +782,10 @@ def test_update_comment_if_user_is_not_staff_or_owner(client: TestClient,
     # owner is not staff user
     response = client.put(
         url=f'/posts/comment/update/{comment_for_update.id}',
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
     )
 
@@ -556,9 +804,14 @@ def test_update_comment_without_particular_scope(client: TestClient,
                                 expires_delta=timedelta(minutes=5))
     # this comment was posted by user from `get_token` token data
     comment_for_update = create_comments_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.put(
         url=f'/posts/comment/update/{comment_for_update.id}',
-        headers={'Authorization': f'Bearer {token}'},
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
     )
 
@@ -570,14 +823,42 @@ def test_update_comment_if_passed_wrong_comment_id(client: TestClient, get_token
     """
     Test update comment with passed wrong comment_id which does not exist in the db.
     """
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.put(
         url='/posts/comment/update/150',  # 150 is not existing id
-        headers={'Authorization': f'Bearer {get_token}'},
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
         json={'body': 'Comment body2 for post 150 updated!'}
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json() == {'detail': 'Comment with passed id does not exists'}
+
+
+def test_update_comment_if_csrf_tokens_mismatch(client: TestClient,
+                                                create_comments_for_user: list[Comment],
+                                                get_token: str) -> None:
+    """
+    Test update comment with passed comment_id if csrf tokens in request header and client cookies are mismatch.
+    """
+    # this comment was posted by user from `get_token` token data
+    comment_for_update = create_comments_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
+    response = client.put(
+        url=f'/posts/comment/update/{comment_for_update.id}',
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': 'wrong_csrf_token'
+        },
+        json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
 def test_delete_comment_with_particular_scope(client: TestClient,
@@ -588,9 +869,14 @@ def test_delete_comment_with_particular_scope(client: TestClient,
     Test delete comment by its id if user has appropriate access scope for this action.
     """
     comment_for_delete = create_comments_for_user[0]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.delete(
         url=f'posts/comment/delete/{comment_for_delete.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -601,9 +887,14 @@ def test_delete_comment_if_passed_wrong_comment_id(client: TestClient, get_token
     """
     Test delete comment by its id if passed id does not matched with any comment.
     """
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.delete(
         url='posts/comment/delete/150',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -622,9 +913,14 @@ def test_delete_comment_if_user_not_owner_or_staff(client: TestClient,
     # change owner for comment for delete
     db.query(Comment).filter(Comment.id == comment_for_delete.id).update({'owner_id': create_multiple_users[1].id})
     create_comments_for_user[1].owner = create_multiple_users[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.delete(
         url=f'posts/comment/delete/{comment_for_delete.id}',
-        headers={'Authorization': f'Bearer {get_token}'}
+        headers={
+            'Authorization': f'Bearer {get_token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -641,10 +937,39 @@ def test_delete_comment_without_particular_scope(client: TestClient,
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
     comment_for_delete = create_comments_for_user[1]
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+
     response = client.delete(
         url=f'posts/comment/delete/{comment_for_delete.id}',
-        headers={'Authorization': f'Bearer {token}'}
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
     )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json() == {'detail': 'Not enough permissions'}
+
+
+def test_delete_comment_if_csrf_tokens_mismatch(client: TestClient,
+                                                create_comments_for_user: list[Comment],
+                                                create_multiple_users: list[User]) -> None:
+    """
+    Test delete comment by its id if csrf tokens in request header and client cookies are mismatch.
+    """
+    # token without access scope for delete comment
+    token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
+                                expires_delta=timedelta(minutes=5))
+    comment_for_delete = create_comments_for_user[1]
+    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
+
+    response = client.delete(
+        url=f'posts/comment/delete/{comment_for_delete.id}',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'CSRF token missing or incorrect'}

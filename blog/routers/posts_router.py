@@ -11,10 +11,11 @@ from common.utils import show_exception
 from dependencies import (
     DatabaseDependency,
     get_current_user,
-    SecurityScopesDependency
+    SecurityScopesDependency,
+    CsrfVerifyDependency
 )
 from posts import schemas, models, crud
-from posts.utils import create_post_show_instance_with_extra_attributes
+from posts.utils import create_post_show_instance_with_extra_attributes, is_object_owner_or_staff_user
 
 router = APIRouter()
 
@@ -22,7 +23,8 @@ router = APIRouter()
 @router.post('/create',
              response_model=schemas.PostShow,
              status_code=status.HTTP_201_CREATED,
-             summary='Create post')
+             summary='Create post',
+             dependencies=[CsrfVerifyDependency])
 async def create_post(current_user: Annotated[User, Security(get_current_user, scopes=['post:create'])],
                       post: schemas.PostCreate,
                       db: DatabaseDependency) -> Union[schemas.PostShow, HTTPException]:
@@ -59,7 +61,7 @@ async def create_post(current_user: Annotated[User, Security(get_current_user, s
              response_model=schemas.CategoryCreate,
              status_code=status.HTTP_201_CREATED,
              summary='Create post category',
-             dependencies=[Security(get_current_user, scopes=['category:create'])])
+             dependencies=[Security(get_current_user, scopes=['category:create']), CsrfVerifyDependency])
 async def create_category(category: schemas.CategoryCreate,
                           db: DatabaseDependency) -> Union[models.Category, HTTPException]:
     """
@@ -79,7 +81,7 @@ async def read_post(db: DatabaseDependency, post_id: int) -> schemas.PostShow:
     """
     Obtain post by its `post_id`.
     """
-    query = crud.get_post_by_id_query(db, post_id)
+    query = crud.get_post_by_id_query(post_id)
     post = db.execute(query).mappings().first()
     if not post:
         raise show_exception('post', status.HTTP_404_NOT_FOUND)
@@ -97,13 +99,11 @@ async def read_posts(db: DatabaseDependency,
     """
     Obtain all posts with `skip`, `limit` and appropriate `category` if it provided.
     """
-    query = crud.get_posts_query(db, category, skip=skip, limit=limit)
+    query = crud.get_posts_query(category, skip, limit)
     # rows with post's scalars values as list
     posts_rows = db.execute(query).mappings()
-    posts_show_list = []  # result list for response
-    for row in posts_rows:
-        post_show = create_post_show_instance_with_extra_attributes(row)
-        posts_show_list.append(post_show)
+    # result list for response
+    posts_show_list = [create_post_show_instance_with_extra_attributes(row) for row in posts_rows]
 
     return posts_show_list
 
@@ -124,7 +124,8 @@ async def read_post_categories(db: DatabaseDependency,
 @router.put('/update/{post_id}',
             response_model=schemas.PostShow,
             status_code=status.HTTP_200_OK,
-            summary='Update post by passed `post_id`')
+            summary='Update post by passed `post_id`',
+            dependencies=[CsrfVerifyDependency])
 def update_post(post_id: int,
                 data: schemas.PostUpdate,
                 current_user: SecurityScopesDependency(scopes=['post:update']),
@@ -132,13 +133,13 @@ def update_post(post_id: int,
     """
     Update post's data.
     """
-    query = crud.get_post_by_id_query(db, post_id)
+    query = crud.get_post_by_id_query(post_id)
     db_post = db.execute(query).scalar()
     if not db_post:
         raise show_exception('post', status.HTTP_404_NOT_FOUND)
     # restriction update post only by staff users or post's owner,
     # even `current_user` has appropriate authorization scope
-    if current_user.id != db_post.owner_id:
+    if not is_object_owner_or_staff_user(db_post, current_user):
         raise show_exception('post', status.HTTP_403_FORBIDDEN)
     data_to_update = data.model_dump(exclude={'id', 'category'})
     data_to_update.update({
@@ -155,19 +156,20 @@ def update_post(post_id: int,
 
 @router.delete('/delete/{post_id}',
                status_code=status.HTTP_204_NO_CONTENT,
-               summary='Delete post by passed `post_id`')
+               summary='Delete post by passed `post_id`',
+               dependencies=[CsrfVerifyDependency])
 async def delete_post(db: DatabaseDependency,
                       current_user: SecurityScopesDependency(scopes=['post:delete']),
                       post_id: int) -> None:
     """
     Remove post by its `post_id`
     """
-    query = crud.get_post_by_id_query(db, post_id)
+    query = crud.get_post_by_id_query(post_id)
     db_post = db.execute(query).scalar()
     if not db_post:
         raise show_exception('post', status.HTTP_404_NOT_FOUND)
     # post can be deleted only by its owner or staff users
-    if db_post.owner_id != current_user.id and current_user.role not in ('admin', 'moderator'):
+    if not is_object_owner_or_staff_user(db_post, current_user):
         raise show_exception('post', status.HTTP_403_FORBIDDEN)
     crud.delete_post(db, db_post)
 
@@ -175,7 +177,8 @@ async def delete_post(db: DatabaseDependency,
 @router.post('/create_comment/{post_id}',
              response_model=schemas.CommentShow,
              status_code=status.HTTP_201_CREATED,
-             summary='Create comment for post with `post_id`')
+             summary='Create comment for post with `post_id`',
+             dependencies=[CsrfVerifyDependency])
 async def create_comment(db: DatabaseDependency,
                          current_user: SecurityScopesDependency(scopes=['comment:create']),
                          comment: schemas.CommentCreateOrUpdate,
@@ -183,7 +186,7 @@ async def create_comment(db: DatabaseDependency,
     """
     Create comment for post with id `post_id` behalf `current_user`.
     """
-    query = crud.get_post_by_id_query(db, post_id)
+    query = crud.get_post_by_id_query(post_id)
     db_post = db.execute(query).first()
     if not db_post:
         raise show_exception('post', status.HTTP_404_NOT_FOUND)
@@ -193,7 +196,8 @@ async def create_comment(db: DatabaseDependency,
 @router.post('/comment/{action}/{comment_id}',
              response_model=schemas.CommentShow,
              status_code=status.HTTP_200_OK,
-             summary='Set like or dislike `action` for comment with `comment_id` behalf current user')
+             summary='Set like or dislike `action` for comment with `comment_id` behalf current user',
+             dependencies=[CsrfVerifyDependency])
 async def set_comment_like_or_dislike(db: DatabaseDependency,
                                       current_user: SecurityScopesDependency(scopes=['comment:rate']),
                                       comment_id: int,
@@ -218,7 +222,8 @@ async def set_comment_like_or_dislike(db: DatabaseDependency,
 @router.put('/comment/update/{comment_id}',
             response_model=schemas.CommentShow,
             status_code=status.HTTP_200_OK,
-            summary='Update comment with `comment_id`')
+            summary='Update comment with `comment_id`',
+            dependencies=[CsrfVerifyDependency])
 async def update_comment(db: DatabaseDependency,
                          current_user: SecurityScopesDependency(scopes=['comment:update']),
                          data: schemas.CommentCreateOrUpdate,
@@ -230,7 +235,7 @@ async def update_comment(db: DatabaseDependency,
     if not db_comment:
         raise show_exception('comment', status.HTTP_404_NOT_FOUND)
     # comment can be updated only by its owner or staff users
-    if db_comment.owner_id != current_user.id and current_user.role not in ('admin', 'moderator'):
+    if not is_object_owner_or_staff_user(db_comment, current_user):
         raise show_exception('comment', status.HTTP_403_FORBIDDEN)
     data_to_update = data.model_dump(exclude_none=True)
     return crud.update_comment(db, db_comment, data_to_update)
@@ -238,7 +243,8 @@ async def update_comment(db: DatabaseDependency,
 
 @router.delete('/comment/delete/{comment_id}',
                status_code=status.HTTP_204_NO_CONTENT,
-               summary='Delete comment with `comment_id`')
+               summary='Delete comment with `comment_id`',
+               dependencies=[CsrfVerifyDependency])
 async def remove_comment(db: DatabaseDependency,
                          current_user: SecurityScopesDependency(scopes=['comment:delete']),
                          comment_id: int) -> None:
@@ -248,6 +254,6 @@ async def remove_comment(db: DatabaseDependency,
     db_comment = crud.get_comment_by_id(db, comment_id)
     if not db_comment:
         raise show_exception('comment', status.HTTP_404_NOT_FOUND)
-    if db_comment.owner_id != current_user.id and current_user.role not in ('admin', 'moderator'):
+    if not is_object_owner_or_staff_user(db_comment, current_user):
         raise show_exception('comment', status.HTTP_403_FORBIDDEN)
     crud.delete_comment(db, db_comment)
