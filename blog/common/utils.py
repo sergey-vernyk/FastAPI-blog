@@ -23,6 +23,6 @@ def create_cookie(response: Response, key: str, value: str) -> None:
         value=value,
         max_age=3600,  # Set the cookie to expire after 3600 seconds (60 minutes)
         httponly=True,  # Ensures that the cookie is only accessible via HTTP (not JavaScript)
-        # secure=True,  # Ensures that the cookie is only sent over HTTPS
+        secure=True,  # Ensures that the cookie is only sent over HTTPS
         samesite='strict',  # Prevents the cookie from being sent in cross-site requests
     )

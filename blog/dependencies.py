@@ -15,7 +15,7 @@ from db_connection import SessionLocal
 settings = Settings()
 # for authentication using Bearer Token obtained with a password
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl='/users/token',
+    tokenUrl='/users/login_with_token',
     scopes={
         'post:create': 'Write a new post',
         'category:create': 'Create a new category for posts',

@@ -68,7 +68,7 @@ def get_posts_query(category: str, skip: int = 0, limit: int = 100) -> Select:
     """
     return select(models.Post, func.count(models.Comment.id).label('count_comments')).join(
         models.Category).outerjoin(models.Comment).filter(models.Category.name.icontains(category)).group_by(
-        models.Post.id).offset(skip).limit(limit)
+        models.Post.id).order_by(Post.id).offset(skip).limit(limit)
 
 
 def get_post_categories(db: Session, skip: int = 0, limit: int = 100) -> list[Type[Category]]:

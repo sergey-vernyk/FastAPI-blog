@@ -516,7 +516,7 @@ def test_login_for_token_success(client: TestClient, create_multiple_users: list
     }
 
     response = client.post(
-        url='/users/token',
+        url='/users/login_with_token',
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         data=form_data
     )
@@ -525,13 +525,16 @@ def test_login_for_token_success(client: TestClient, create_multiple_users: list
     response_data = response.json()
     assert 'access_token' in response_data and 'token_type' in response_data
     assert response_data['token_type'] == 'bearer'
+    assert response_data['detail'] == f'Access token was made on username `{user_for_token.username}`'
     # check data from token (scopes and username)
     token_data = get_token_data(response_data['access_token'])
     assert token_data.username == user_for_token.username
     assert token_data.scopes == [form_data['scope']]
+    assert len(response.cookies) > 0, 'Must available cookies'
+    assert 'csrftoken' in response.cookies, 'Must be csrftoken in the cookies'
 
 
-def test_login_for_token_if_passed_user_not_found(client: TestClient, create_multiple_users: list[User]) -> None:
+def test_login_for_token_if_passed_user_not_found(client: TestClient) -> None:
     """
     Test get access token if user with passed username is not exists.
     """
@@ -542,50 +545,13 @@ def test_login_for_token_if_passed_user_not_found(client: TestClient, create_mul
     }
 
     response = client.post(
-        url='/users/token',
+        url='/users/login_with_token',
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         data=form_data
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json() == {'detail': 'User with passed id does not exists'}
-
-
-def test_login_success(client: TestClient, user_for_token: User) -> None:
-    """
-    Test for login user in the system with successful result.
-    Must be `csrftoken` key in response cookie.
-    """
-    response = client.post(
-        url='/users/login',
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-        data={
-            'username': user_for_token.username,
-            'password': USER_DATA['password']
-        }
-    )
-
-    assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {'detail': 'Login successful'}
-    assert len(response.cookies) > 0, 'Must available cookies'
-    assert 'csrftoken' in response.cookies, 'Must be csrftoken in the cookies'
-
-
-def test_login_if_credentials_are_invalid(client: TestClient, user_for_token: User) -> None:
-    """
-    Test for login user in the system if passed credentials are invalid.
-    """
-    response = client.post(
-        url='/users/login',
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-        data={
-            'username': user_for_token.username,
-            'password': 'wrong_password'
-        }
-    )
-
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    assert response.json() == {'detail': 'Invalid credentials'}
 
 
 def test_get_user_posts_without_filter(client: TestClient, get_token: str, create_posts_for_user: list[Post]) -> None:

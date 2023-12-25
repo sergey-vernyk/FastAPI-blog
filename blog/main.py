@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from db_connection import Base, engine
@@ -21,3 +22,10 @@ app.include_router(router=posts_router.router, prefix='/posts', tags=['posts'])
 
 # mount directory for static files
 app.mount('/static', StaticFiles(directory='blog/static'), name='static')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins='http://localhost:5174',
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

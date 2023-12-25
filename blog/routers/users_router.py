@@ -3,20 +3,18 @@ from typing import Annotated, Type, Union
 
 from fastapi import (
     APIRouter, status, HTTPException,
-    Depends, Query, Security, Form, UploadFile,
+    Depends, Query, Security, UploadFile,
     Request
 )
 from fastapi.responses import UJSONResponse
 
 from accounts import schemas, crud
 from accounts.models import User
-from accounts.schemas import Token
 from accounts.utils import create_user_image_url, create_or_update_user_folder
 from common.security import (
-    create_access_token, 
+    create_access_token,
     verify_password_or_exception,
     OAuthFormWithDefaultScopes,
-    verify_password,
     generate_csrf_token
 )
 from common.utils import show_exception, create_cookie
@@ -24,9 +22,8 @@ from config import Settings
 from dependencies import (
     DatabaseDependency,
     SecurityScopesDependency,
-    get_current_user, 
-    CsrfVerifyDependency
-)
+    get_current_user,
+    CsrfVerifyDependency, )
 from posts.models import Post, Comment
 from posts.schemas import UserPostsShow, UserCommentsShow
 
@@ -145,14 +142,13 @@ async def read_user_by_id(user_id: int,
     return user
 
 
-@router.post('/token',
-             response_model=Token,
+@router.post('/login_with_token',
              status_code=status.HTTP_200_OK,
-             summary='Get access bearer token')
+             summary='Get access bearer token and login with the token')
 async def login_for_token(form_data: Annotated[OAuthFormWithDefaultScopes, Depends()],
-                          db: DatabaseDependency) -> dict:
+                          db: DatabaseDependency) -> UJSONResponse:
     """
-    Obtain access bearer token using data from `from_data`.
+    Obtain access bearer token using data from `from_data` and login in the system with the token.
     """
     user = crud.get_user_by_username(db, form_data.username)
     if not user:
@@ -165,32 +161,18 @@ async def login_for_token(form_data: Annotated[OAuthFormWithDefaultScopes, Depen
         expires_delta=access_token_expires
     )
 
-    return {'access_token': access_token, 'token_type': 'bearer'}
-
-
-@router.post('/login',
-             response_class=UJSONResponse,
-             summary='Log-in')
-async def login(username: Annotated[str, Form()],
-                password: Annotated[str, Form(min_length=10)],
-                db: DatabaseDependency) -> UJSONResponse:
-    """
-    Log-in user in the system and create cookie with CSRF token in a client side.
-    """
-    db_user = crud.get_user_by_username(db, username)
-    if not db_user or not verify_password(password, db_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail='Invalid credentials'
-        )
-
-    csrf_token = generate_csrf_token(n_bytes=64)
-
     response = UJSONResponse(
-        content={'detail': 'Login successful'},
+        content={
+            'detail': f'Access token was made on username `{form_data.username}`',
+            'access_token': access_token,
+            'token_type': 'bearer',
+            'scopes': form_data.scopes
+        },
         status_code=status.HTTP_200_OK
     )
-    # set csrftoken in cookies
+    # generate csrf token and set it in cookies
+    csrf_token = generate_csrf_token(n_bytes=64)
+
     create_cookie(response, key='csrftoken', value=csrf_token)
 
     return response

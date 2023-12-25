@@ -11,7 +11,11 @@ from passlib.context import CryptContext
 from accounts.schemas import TokenData
 from config import Settings
 
-DEFAULT_ACCESS_SCOPES = 'me:read me:update me:delete post:read post:delete post:create comment:read'
+DEFAULT_ACCESS_SCOPES = (
+    'me:read me:update me:delete '
+    'post:read post:delete post:update post:create '
+    'comment:read comment:create comment:update'
+)
 
 settings = Settings()
 
