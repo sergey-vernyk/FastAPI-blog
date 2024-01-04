@@ -31,4 +31,9 @@ ENV PATH "$PATH:/home/$user/.local/bin"
 # copy source code to docker
 COPY . /blog
 # start uvicorn server
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--reload", \
+     "--ssl-certfile", "/blog/proxy/192.168.59.100.pem", \
+     "--ssl-keyfile", "/blog/proxy/192.168.59.100-key.pem"]

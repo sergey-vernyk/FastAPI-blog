@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-db-service
+spec:
+  selector:
+    app: postgresql-db-deployment
+  ports:
+  - port: 5432
+    name: sql
+    targetPort: 5432
+    protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-db-stateful
+spec:
+  selector:
+    matchLabels:
+      app: postgresql-db-deployment
+  serviceName: "postgres-db-service"
+  replicas: 3
+  minReadySeconds: 10
+  template:
+    metadata:
+      labels:
+        app: postgresql-db-deployment
+    spec:
+      containers:
+      - name: postgres-db-stateful
+        image: postgres:14.6-alpine
+        ports:
+        - containerPort: 5432
+          name: sql
+        volumeMounts:
+        - name: postgres-pg-data
+          mountPath: /var/lib/postgresql/data
+        envFrom:
+          - secretRef:
+              name: postgres-secrets
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-pg-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: local-storage
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 500Mi

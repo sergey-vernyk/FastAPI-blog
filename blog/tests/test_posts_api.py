@@ -261,7 +261,7 @@ def test_update_post_with_authorization(client: TestClient,
                      category=post_for_update.category.name)
     post_update_body = PostUpdate(**post_data)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    
+
     response = client.put(
         url=f'/posts/update/{post_for_update.id}',
         headers={
@@ -682,7 +682,7 @@ def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client: TestClient,
                                                              get_token: str,
                                                              create_comments_for_user: list[Comment]) -> None:
     """
-    Test set like or dislike for comment with comment_id, 
+    Test set like or dislike for comment with comment_id,
     if csrf tokens in request header and client cookies are mismatch.
     """
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')

@@ -43,34 +43,13 @@ def test_create_user_if_email_already_exist(client: TestClient, create_multiple_
     current_email = USER_DATA['email']
     # change email for user that will be created on email that had been already registered
     USER_DATA['email'] = create_multiple_users[0].email
-    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.post(
         url='/users/create',
-        headers={'X-CSRFToken': TEST_CSRF_TOKEN},
         json=USER_DATA
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.json() == {'detail': 'Email already registered'}
-    USER_DATA['email'] = current_email  # replace previous email to avoid errors
-
-
-def test_create_user_if_csrf_tokens_mismatch(client: TestClient, create_multiple_users: list[User]) -> None:
-    """
-    Test create user if csrf tokens in request header and client cookies are mismatch.
-    """
-    current_email = USER_DATA['email']
-    # change email for user that will be created on email that had been already registered
-    USER_DATA['email'] = create_multiple_users[0].email
-    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
-
-    response = client.post(
-        url='/users/create',
-        headers={'X-CSRFToken': TEST_CSRF_TOKEN},
-        json=USER_DATA
-    )
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
     USER_DATA['email'] = current_email  # replace previous email to avoid errors
 
 

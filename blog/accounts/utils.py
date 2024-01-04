@@ -5,8 +5,15 @@ from fastapi.encoders import jsonable_encoder
 
 from accounts import schemas
 from accounts.models import User
+from config import Settings
 
-USER_IMAGES_DIR_PATH = 'blog/static/img/users_images/'
+settings = Settings()
+
+USER_IMAGES_DIR_PATH = ''
+if settings.dev_or_prod == 'dev':
+    USER_IMAGES_DIR_PATH = 'blog/static/img/users_images/'
+elif settings.dev_or_prod == 'prod':
+    USER_IMAGES_DIR_PATH = '/vol/static/img/users_images/'
 
 
 async def create_user_image_url(current_user: Union[User, Type[User]], scheme: str, domain: str) -> schemas.UserShow:

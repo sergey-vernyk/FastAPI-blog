@@ -23,7 +23,8 @@ from dependencies import (
     DatabaseDependency,
     SecurityScopesDependency,
     get_current_user,
-    CsrfVerifyDependency, )
+    CsrfVerifyDependency
+)
 from posts.models import Post, Comment
 from posts.schemas import UserPostsShow, UserCommentsShow
 
@@ -38,8 +39,7 @@ permission_exception = HTTPException(
 @router.post('/create',
              response_model=schemas.UserShow,
              status_code=status.HTTP_201_CREATED,
-             summary='Create user',
-             dependencies=[CsrfVerifyDependency])
+             summary='Create user')
 async def create_user(user: schemas.UserCreate, db: DatabaseDependency) -> Union[User, HTTPException]:
     """
     Create user in database.
@@ -68,11 +68,14 @@ async def create_user_photo(current_user: SecurityScopesDependency(scopes=['me:u
     # convert image to bytes, save it by `image_save_path`,
     # save this `image_db_path` to user's `image` column in the `db`
     image_bytes = await image.read()
-
-    image_save_path = f'blog/static/img/users_images/{current_user.username}/{image.filename}'
+    image_save_path = ''
+    if settings.dev_or_prod == 'dev':
+        image_save_path = f'blog/static/img/users_images/{current_user.username}/{image.filename}'
+    elif settings.dev_or_prod == 'prod':
+        image_save_path = f'/vol/static/img/users_images/{current_user.username}/{image.filename}'
     create_or_update_user_folder(current_user)
 
-    image_db_path = '/'.join(image_save_path.split('/')[1:])  # return path without `blog` word
+    image_db_path = f'static/img/users_images/{current_user.username}/{image.filename}'
     with open(image_save_path, 'wb') as img:
         img.write(image_bytes)
     crud.update_user(db, current_user, {'image': image_db_path})
@@ -131,15 +134,16 @@ async def read_users(request: Request,
             status_code=status.HTTP_200_OK,
             summary='Get user by passed `user_id`',
             dependencies=[Security(get_current_user, scopes=['user:read'])])
-async def read_user_by_id(user_id: int,
-                          db: DatabaseDependency) -> Union[HTTPException, Type[User]]:
+async def read_user_by_id(request: Request,
+                          user_id: int,
+                          db: DatabaseDependency) -> Union[HTTPException, schemas.UserShow]:
     """
     Obtain user by its `user_id`.
     """
     user = crud.get_user_by_id(db, user_id=user_id)
     if user is None:
         raise show_exception('user', status.HTTP_404_NOT_FOUND)
-    return user
+    return await create_user_image_url(user, request.base_url.scheme, request.base_url.hostname)
 
 
 @router.post('/login_with_token',
