@@ -1,6 +1,5 @@
 from typing import Type, Union
 
-from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -119,18 +118,5 @@ def reset_user_password(db: Session, data: dict) -> None:
     """
     Reset user's account password.
     """
-    # select between email or username (depends upon what was passed)
-    if data['email']:
-        user = get_user_by_email(db, data.get('email'))
-    elif data['username']:
-        user = get_user_by_username(db, data.get('username'))
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Username or email was not passed'
-        )
-
-    # hashing plain password
-    hashed_password = security.get_password_hash(data['password'])
-    db.query(User).filter(User.id == user.id).update({'hashed_password': hashed_password})
+    db.query(User).filter(User.id == data['user_id']).update({'hashed_password': data['password']})
     db.commit()

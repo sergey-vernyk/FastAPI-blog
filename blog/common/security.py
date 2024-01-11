@@ -9,7 +9,7 @@ from jose import jwt
 from passlib.context import CryptContext
 
 from accounts.schemas import TokenData
-from config import Settings
+from config import get_settings
 
 DEFAULT_ACCESS_SCOPES = (
     'me:read me:update me:delete '
@@ -17,7 +17,7 @@ DEFAULT_ACCESS_SCOPES = (
     'comment:read comment:create comment:update'
 )
 
-settings = Settings()
+settings = get_settings()
 
 # for hashing and verifying passwords
 pwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')

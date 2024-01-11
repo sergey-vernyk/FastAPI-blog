@@ -91,6 +91,9 @@ def user_for_token(db: Session):
     db.add(user)
     db.commit()
     db.refresh(user)
+    # make user's account active,
+    # since after creating it is inactive by default until user will active it
+    db.query(User).filter(User.id == user.id).update({'is_active': True})
     yield user
 
 
@@ -130,6 +133,10 @@ def create_multiple_users(db: Session):
     )
     db.add_all([user1, user2])
     db.commit()
+    # make users account active,
+    # since after creating it is inactive by default until user will active it
+    for u in (user1, user2):
+        db.query(User).filter(User.id == u.id).update({'is_active': True})
     yield [user1, user2]
 
 

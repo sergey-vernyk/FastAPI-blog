@@ -1,30 +1,40 @@
 import os.path
 import shutil
+from base64 import urlsafe_b64encode
 from datetime import datetime
+from time import sleep
+from unittest.mock import patch
 
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
 
 from accounts.schemas import UserShow
-from accounts.utils import USER_IMAGES_DIR_PATH
+from accounts.utils import USER_IMAGES_DIR_PATH, token_generator
 from common.security import get_token_data
 from posts.schemas import UserCommentsShow, UserPostsShow
 from .fixtures import *
+from ..config import get_settings
 
 TEST_CSRF_TOKEN = 'bvhahncoioerucmigcniquw2cewqc'
+settings = get_settings()
 
 
-def test_create_user_success(client: TestClient) -> None:
+def test_create_user_success(client: TestClient, mocker) -> None:
     """
     Test create user with passed parameters.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    # mocking SMTP_SSL server
+    mock_smtp = mocker.MagicMock(name='blog.common.send_email.smtplib.SMTP_SSL')
+    mocker.patch('blog.common.send_email.smtplib.SMTP_SSL', new=mock_smtp)
 
     response = client.post(
         url='/users/create',
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
         json=USER_DATA
     )
+    # since we use context manager for create SMTP server we have to use __enter__
+    assert mock_smtp.return_value.__enter__.return_value.sendmail.call_count == 1
 
     assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
@@ -33,7 +43,7 @@ def test_create_user_success(client: TestClient) -> None:
     assert data['first_name'] == USER_DATA['first_name']
     assert data['last_name'] == USER_DATA['last_name']
     assert data['role'] == 'regular-user'
-    assert data['is_active'] is True
+    assert data['is_active'] is False
 
 
 def test_create_user_if_email_already_exist(client: TestClient, create_multiple_users: list[User]) -> None:
@@ -51,6 +61,23 @@ def test_create_user_if_email_already_exist(client: TestClient, create_multiple_
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.json() == {'detail': 'Email already registered'}
     USER_DATA['email'] = current_email  # replace previous email to avoid errors
+
+
+def test_create_user_if_username_already_exist(client: TestClient, create_multiple_users: list[User]) -> None:
+    """
+    Test create user if passed username was already registered by another user.
+    """
+    current_username = USER_DATA['username']
+    # change email for user that will be created on email that had been already registered
+    USER_DATA['username'] = create_multiple_users[1].username
+
+    response = client.post(
+        url='/users/create',
+        json=USER_DATA
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json() == {'detail': 'User with provided username already registered'}
+    USER_DATA['username'] = current_username  # replace previous email to avoid errors
 
 
 def test_read_all_users_with_particular_scope(client: TestClient,
@@ -171,7 +198,7 @@ def test_read_users_me_if_user_is_inactive(user_for_token: User,
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json() == {'detail': 'Inactive user'}
+    assert response.json() == {'detail': 'Inactive user. Activate your account in order to do this action'}
 
 
 def test_read_users_me_without_particular_scope(create_multiple_users: list[User], client: TestClient) -> None:
@@ -410,16 +437,17 @@ def test_update_user_info_if_csrf_tokens_mismatch(client: TestClient, create_mul
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_reset_password_success(client: TestClient, user_for_token: User) -> None:
+def test_reset_password_request_if_passed_username_success(client: TestClient, user_for_token: User, mocker) -> None:
     """
-    Test reset user's account password using username or email.
+    Test reset user's account password using username.
     """
-    previous_password = user_for_token.hashed_password
     data_to_reset = {
         'username': user_for_token.username,
         'password': 'new_super_password'
     }
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    mock_smtp = mocker.MagicMock(name='blog.common.send_email.smtplib.SMTP_SSL')
+    mocker.patch('blog.common.send_email.smtplib.SMTP_SSL', new=mock_smtp)
 
     response = client.post(
         url='/users/reset_password',
@@ -427,13 +455,26 @@ def test_reset_password_success(client: TestClient, user_for_token: User) -> Non
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
     )
 
-    assert response.status_code == status.HTTP_200_OK
-    assert user_for_token.hashed_password != previous_password, 'Password was not changed'
-    assert response.json() == {'success': 'Password has been changed successfully'}
+    # since we use context manager for create SMTP server we have to use __enter__
+    assert mock_smtp.return_value.__enter__.return_value.sendmail.call_count == 1
 
-    # email for password reset instead of username
-    data_to_reset.pop('username')
-    data_to_reset['email'] = user_for_token.email
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {
+        'detail': 'Check your email! You have to receive email with instruction for reset password'
+    }
+
+
+def test_reset_password_request_if_passed_email_success(client: TestClient, user_for_token: User, mocker) -> None:
+    """
+    Test reset user's account password using email.
+    """
+    data_to_reset = {
+        'email': user_for_token.email,
+        'password': 'new_super_password'
+    }
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    mock_smtp = mocker.MagicMock(name='blog.common.send_email.smtplib.SMTP_SSL')
+    mocker.patch('blog.common.send_email.smtplib.SMTP_SSL', new=mock_smtp)
 
     response = client.post(
         url='/users/reset_password',
@@ -441,9 +482,13 @@ def test_reset_password_success(client: TestClient, user_for_token: User) -> Non
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
     )
 
+    # since we use context manager for create SMTP server we have to use __enter__
+    assert mock_smtp.return_value.__enter__.return_value.sendmail.call_count == 1
+
     assert response.status_code == status.HTTP_200_OK
-    assert user_for_token.hashed_password != previous_password, 'Password was not changed'
-    assert response.json() == {'success': 'Password has been changed successfully'}
+    assert response.json() == {
+        'detail': 'Check your email! You have to receive email with instruction for reset password'
+    }
 
 
 def test_reset_password_if_was_not_passed_required_data(client: TestClient) -> None:
@@ -462,7 +507,7 @@ def test_reset_password_if_was_not_passed_required_data(client: TestClient) -> N
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json() == {'detail': 'Username or email was not passed'}
+    assert response.json() == {'detail': 'You must provide either username or email for reset password'}
 
 
 def test_reset_password_if_csrf_tokens_mismatch(client: TestClient) -> None:
@@ -482,7 +527,52 @@ def test_reset_password_if_csrf_tokens_mismatch(client: TestClient) -> None:
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_login_for_token_success(client: TestClient, create_multiple_users: list[User]) -> None:
+def test_confirm_reset_password_success(client: TestClient, user_for_token: User) -> None:
+    """
+    Test check if user's account password will really change
+    after user will follow link for password reset.
+    """
+    old_user_password = user_for_token.hashed_password
+    uid_pass = (f'{urlsafe_b64encode(get_password_hash("new_password").encode("utf-8")).decode("utf-8")}:'
+                f'{urlsafe_b64encode(user_for_token.username.encode("utf-8")).decode("utf-8")}')
+    token = token_generator.make_token(user_for_token)
+
+    response = client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {'detail': 'Password has been changed successfully'}
+    assert user_for_token.hashed_password != old_user_password, 'Password must be changed'
+
+
+def test_confirm_reset_password_fail(client: TestClient, user_for_token: User) -> None:
+    """
+    Test check when link for password reset confirm is invalid after it has been already used
+    or its lifetime has been expired.
+    """
+    # testing when link has been already used by anyone
+    uid_pass = (f'{urlsafe_b64encode(get_password_hash("new_password").encode("utf-8")).decode("utf-8")}:'
+                f'{urlsafe_b64encode(user_for_token.username.encode("utf-8")).decode("utf-8")}')
+    token = token_generator.make_token(user_for_token)
+    # mock request for attempting to confirm reset password
+    client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+    response2 = client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+
+    assert response2.status_code == status.HTTP_200_OK
+    assert response2.json() == {'detail': 'Activation link is invalid!'}
+
+    # testing when link has been already expired (token expiration time set to 0)
+    with patch.object(token_generator, '_token_expired_time', 0):
+        uid_pass = (f'{urlsafe_b64encode(get_password_hash("new_password").encode("utf-8")).decode("utf-8")}:'
+                    f'{urlsafe_b64encode(user_for_token.username.encode("utf-8")).decode("utf-8")}')
+        token = token_generator.make_token(user_for_token)
+        sleep(1)  # do some delay in order to pass test (in debug mode this delay do not necessary)
+        response = client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {'detail': 'Activation link is invalid!'}
+
+
+def test_login_with_token_success(client: TestClient, create_multiple_users: list[User]) -> None:
     """
     Test get access token with scope.
     """
@@ -513,7 +603,7 @@ def test_login_for_token_success(client: TestClient, create_multiple_users: list
     assert 'csrftoken' in response.cookies, 'Must be csrftoken in the cookies'
 
 
-def test_login_for_token_if_passed_user_not_found(client: TestClient) -> None:
+def test_login_with_token_if_passed_user_not_found(client: TestClient) -> None:
     """
     Test get access token if user with passed username is not exists.
     """

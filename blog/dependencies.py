@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from accounts import models, crud
 from accounts.schemas import TokenData
-from config import Settings
+from config import Settings, get_settings
 from db_connection import SessionLocal
 
-settings = Settings()
+settings = get_settings()
 # for authentication using Bearer Token obtained with a password
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl='/users/login_with_token',
@@ -80,6 +80,11 @@ async def get_current_user(security_scopes: SecurityScopes,
     user = crud.get_user_by_username(db=db, username=token_data.username)
     if user is None:
         raise credentials_exception
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Inactive user. Activate your account in order to do this action'
+        )
     # try to compare security scopes from decoded user's access bearer token with scopes for current endpoint
     for scope in security_scopes.scopes:
         if scope not in token_data.scopes:
@@ -129,3 +134,6 @@ def verify_csrf_token(cookie_token: str = Cookie(None,
 
 
 CsrfVerifyDependency = Depends(verify_csrf_token)
+
+# project settings
+ProjSettingsDependency = Annotated[Settings, Depends(get_settings)]

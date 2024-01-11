@@ -2,12 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config import Settings
+from config import get_settings
 from db_connection import Base, engine
 from routers import posts_router, users_router
 
 Base.metadata.create_all(bind=engine)
-settings = Settings()
+settings = get_settings()
 
 STATIC_DIRECTORY = ''
 if settings.dev_or_prod == 'dev':
@@ -24,7 +24,7 @@ app = FastAPI(
     title='BlogAPI',
     description=DESCRIPTION,
     version='0.1',
-    root_path='/api/v1'
+    root_path=f'/api/v{settings.api_version}'
 )
 app.include_router(router=users_router.router, prefix='/users', tags=['users'])
 app.include_router(router=posts_router.router, prefix='/posts', tags=['posts'])

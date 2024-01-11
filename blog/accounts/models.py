@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, Column, Integer, String, Date, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, Integer, String, Date, Text, DateTime
 from sqlalchemy import types
 from sqlalchemy.orm import relationship
 
@@ -52,11 +54,14 @@ class User(Base):
     date_of_birth = Column('date_of_birth', Date())
     email = Column('email', String, unique=True, index=True, nullable=False)
     hashed_password = Column(String)
-    is_active = Column('is_active', Boolean, default=True)
+    is_active = Column('is_active', Boolean, default=False)
     posts = relationship('Post', back_populates='owner')
     likes = relationship('Comment', secondary=likes_table, viewonly=True)
     dislikes = relationship('Comment', secondary=dislikes_table, viewonly=True)
     comments = relationship('Comment', back_populates='owner')
+    last_login = Column('last_login', DateTime(timezone=True), nullable=True)
+    date_joined = Column('date_joined', DateTime(timezone=True), default=datetime.utcnow(), nullable=False)
+    rating = Column('rating', Integer, default=0)
     about = Column('about', Text, nullable=True)
 
     def __repr__(self):

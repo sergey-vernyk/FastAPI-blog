@@ -1,0 +1,4 @@
+Account activation
+
+Respect, {{ username }}.
+For activate your account with email "{{ email }}" follow the link {{ protocol }}://{{ domain }}/api/v{{ api_version }}/users/activate_account/{{ uid }}/{{ token }}.
