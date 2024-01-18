@@ -9,12 +9,18 @@ from sqlalchemy_utils.functions import create_database, database_exists
 
 from accounts.models import User
 from common.security import get_password_hash, create_access_token
+from config import get_settings
 from db_connection import Base
 from dependencies import get_db
 from dependencies import oauth2_scheme
 from main import app
 from posts.models import Post, Category, Comment
-from .config_test import SQLALCHEMY_DATABASE_URL
+
+settings = get_settings()
+
+SQLALCHEMY_DATABASE_URL = settings.database_url_test
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
 USER_DATA = {
     'username': 'test_user',
@@ -24,6 +30,7 @@ USER_DATA = {
     'email': 'example@example.com',
     'password': 'strong_password',
     'date_of_birth': '1990-12-09',
+    'social_media_links': ['https://facebook.com/users/id=2814984891498911829']
 }
 
 

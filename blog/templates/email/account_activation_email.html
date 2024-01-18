@@ -1,68 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@300&display=swap" rel="stylesheet">
-    <style type="text/css">
-         .block-email-conf {
-            font-size: 0.9rem;
-            font-family: 'Merriweather', serif;
-            text-align: center;
-            padding: 15px;
-            border-bottom: solid 1px #E1E2E1;
-            margin-bottom: 1rem;
-        }
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@300&display=swap" rel="stylesheet">
+  <style type="text/css">
+        .block-email-conf {
+          font-size: 0.9rem;
+          font-family: 'Merriweather', serif;
+          text-align: center;
+          padding: 15px;
+          border-bottom: solid 1px #E1E2E1;
+          margin-bottom: 1rem;
+      }
 
-        .block-email-conf img { display: inline; }
+      .block-email-conf img { display: inline; }
 
-        .block-email-conf p { margin-top: 5px; }
+      .block-email-conf p { margin-top: 5px; }
 
-        .block-email-conf > div {
-            display: inline-flex;
-            justify-content: center;
-            align-items: center;
-        }
+      .block-email-conf > div {
+          display: inline-flex;
+          justify-content: center;
+          align-items: center;
+      }
 
-        .block-email-conf h2 {
-            text-align: center;
-            display: inline;
-            margin-bottom: 15px;
-            margin-top: 0;
-        }
+      .block-email-conf h2 {
+          text-align: center;
+          display: inline;
+          margin-bottom: 15px;
+          margin-top: 0;
+      }
 
-        .block-email-conf p a {
-            text-decoration: none;
-            color: green;
-            text-decoration: underline;
-        }
+      .block-email-conf p a {
+          text-decoration: none;
+          color: green;
+          text-decoration: underline;
+      }
 
-        .block-email-conf p a:hover { color: red; }
+      .block-email-conf p a:hover { color: red; }
 
-        .conf-email {
-            font-weight: bold;
-            font-style: italic;
-        }
+      .conf-email {
+          font-weight: bold;
+          font-style: italic;
+      }
 
-        .username-email {
-            font-weight: bold;
-            color: #E6961D;
-        }
-    </style>
+      .username-email {
+          font-weight: bold;
+          color: #E6961D;
+      }
+  </style>
 </head>
-    <body>
-        <div class="block-email-conf">
-            <div>
-                <img src="https://drive.google.com/uc?export=download&id=1o3PXelqzR8RjNiW5tffmQ1ZAOcG5yjCD" alt="site-logo" border="0" height="80" width="80">
-                <h2>Account activation</h2>
-            </div>
-            <p>
-                Respect,
-                <span class="username-email">{{ username }}</span>.
-                For activate your account with email 
-                <span class="conf-email">"{{ email }}"</span>
-                follow the
-                <a target="_blank" href="{{ protocol }}://{{ domain }}/api/v{{ api_version }}/users/activate_account/{{ uid }}/{{ token }}">link</a>.
-            </p>
-        </div>
-    </body>
+  <body>
+    <div class="block-email-conf">
+      <div>
+        <img src="https://drive.google.com/uc?export=download&id=1kztzTXIijwWcNHJLnrq0ZAqvSqUCFGn2" alt="site-logo" border="0" height="80" width="80">
+        <h2>Account activation</h2>
+      </div>
+      <p>
+        Respect,
+        <span class="username-email">{{ username }}</span>.
+        For activate your account with email 
+        <span class="conf-email">"{{ email }}"</span>
+        follow the
+        <a target="_blank" href="{{ protocol }}://{{ domain }}/api/v{{ api_version }}/users/activate_account/{{ uid }}/{{ token }}">link</a>.
+      </p>
+    </div>
+  </body>
 </html>

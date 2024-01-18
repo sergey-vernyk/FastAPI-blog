@@ -1,6 +1,7 @@
 import datetime
 from base64 import urlsafe_b64encode, urlsafe_b64decode
 from datetime import timedelta
+from pathlib import Path
 from typing import Annotated, Type, Union
 
 from fastapi import (
@@ -129,16 +130,17 @@ async def create_user_photo(current_user: SecurityScopesDependency(scopes=['me:u
     Save passed `image` to provided path, and save this path to `db`.
     """
     current_user = db.merge(current_user)
-    # convert image to bytes, save it by `image_save_path`,
-    # save this `image_db_path` to user's `image` column in the `db`
-    image_bytes = await image.read()
+    # define parent directory path for the directory `static` (for possibility using relative path)
+    parent_dir_path = str(Path(__file__).resolve().parent.parent)
     image_save_path = ''
     if settings.dev_or_prod == 'dev':
-        image_save_path = f'blog/static/img/users_images/{current_user.username}/{image.filename}'
+        image_save_path = f'{parent_dir_path}/static/img/users_images/{current_user.username}/{image.filename}'
     elif settings.dev_or_prod == 'prod':
         image_save_path = f'/vol/static/img/users_images/{current_user.username}/{image.filename}'
+    # convert image to bytes, save it by `image_save_path`
+    image_bytes = await image.read()
     create_or_update_user_folder(current_user)
-
+    # save `image_db_path` to user's `image` column in the `db`
     image_db_path = f'static/img/users_images/{current_user.username}/{image.filename}'
     with open(image_save_path, 'wb') as img:
         img.write(image_bytes)

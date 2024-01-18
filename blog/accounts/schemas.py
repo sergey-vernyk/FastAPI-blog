@@ -16,7 +16,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=10)
     date_of_birth: Optional[date] = None
     about: Optional[str] = Field(default=None, max_length=255)
-
+    social_media_links: Optional[list[str]] = Field(default=[], max_length=2083)
 
 class UserShow(BaseModel):
     """
@@ -37,6 +37,7 @@ class UserShow(BaseModel):
     last_login: datetime | None
     date_joined: datetime | None
     about: str | None
+    social_media_links: list[str] | None
 
     class Config:
         """
@@ -60,6 +61,7 @@ class UserUpdate(BaseModel):
     date_of_birth: Optional[date] = Field(examples=['yyyy-mm-dd'], default=None)
     is_active: Optional[bool] = Field(default=None)
     about: Optional[str] = Field(max_length=255, default=None)
+    social_media_links: Optional[list[str]] = Field(default=[])
 
 
 class UserShowBriefly(BaseModel):

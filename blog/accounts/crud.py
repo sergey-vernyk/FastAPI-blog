@@ -50,7 +50,8 @@ def create_user(db: Session, user: UserCreate) -> User:
                 gender=user.gender,
                 username=user.username,
                 date_of_birth=user.date_of_birth,
-                about=user.about)
+                about=user.about,
+                social_media_links=user.social_media_links)
     db.add(user)  # `add` that instance object to database session
     db.commit()  # save changes to the database
     db.refresh(user)  # refresh instance

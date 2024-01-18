@@ -4,6 +4,7 @@ from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Sequence, Union, Literal, AnyStr
 
 from jinja2 import FileSystemLoader, Environment
@@ -11,7 +12,9 @@ from jinja2 import FileSystemLoader, Environment
 from config import get_settings
 
 settings = get_settings()
-environment = Environment(loader=FileSystemLoader('blog/templates/'))  # define templates location
+# define parent directory path for the directory `templates` (for possibility using relative path)
+PARENT_DIR_PATH = str(Path(__file__).resolve().parent.parent)
+environment = Environment(loader=FileSystemLoader(f'{PARENT_DIR_PATH}/templates/'))  # define templates location
 
 
 class EmailWithAttachments:
@@ -80,7 +83,7 @@ class EmailWithAttachments:
         Returns dict with attachment data for email.
         Data in dict are in particular MIME type which depends on their content.
         """
-        # If no parameter has been sent
+        # if no parameter has been sent
         if all([plain_text, html_name, file_name, image_name]) is None:
             raise ValueError('You must passed at least plain text for message\'s body')
 

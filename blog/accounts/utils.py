@@ -6,6 +6,7 @@ from datetime import datetime
 from secrets import compare_digest
 from typing import Type, Union
 
+from pathlib import Path
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
@@ -14,11 +15,15 @@ from accounts.models import User
 from common.utils import base36decode, base36encode
 from config import get_settings
 
+
 settings = get_settings()
+
+# define parent directory path for the directory `static` (for possibility using relative path)
+PARENT_DIR_PATH = str(Path(__file__).resolve().parent.parent)
 
 USER_IMAGES_DIR_PATH = ''
 if settings.dev_or_prod == 'dev':
-    USER_IMAGES_DIR_PATH = 'blog/static/img/users_images/'
+    USER_IMAGES_DIR_PATH = f'{PARENT_DIR_PATH}/static/img/users_images/'
 elif settings.dev_or_prod == 'prod':
     USER_IMAGES_DIR_PATH = '/vol/static/img/users_images/'
 
@@ -78,8 +83,6 @@ class LimitedLifeTokenGenerator:
 
     key_salt = 'blog.account.utils.LimitedLifeTokenGenerator'
     algorithm = None
-
-    # _secret = None
 
     def __init__(self, secret_key: str, token_expired_timeout: int) -> None:
         assert settings.token_expired_timeout, '`TOKEN_EXPIRED_TIMEOUT` must be provided in settings'

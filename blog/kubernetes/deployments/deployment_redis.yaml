@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+spec:
+  selector:
+    matchLabels:
+      app: redis-deployment
+  template:
+    metadata:
+      labels:
+        app: redis-deployment
+    spec:
+      containers:
+      - name: redis-deployment
+        image: redis:7.0-alpine
+        command: 
+          - redis-server
+          - "/data/redis-master/redis.conf"
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        ports:
+        - containerPort: 6379
+          protocol: TCP
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data/redis
+        - name: redis-config
+          mountPath: /data/redis-master
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-storage
+      - name: redis-config
+        configMap:
+          name: redis-config
+          items:
+            - key: redis-config
+              path: redis.conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+spec:
+  selector:
+    app: redis-deployment
+  ports:
+  - port: 6379
+    targetPort: 6379
+

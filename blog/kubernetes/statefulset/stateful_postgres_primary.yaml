@@ -14,13 +14,13 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: postgresql-db-stateful
+  name: postgresql-db-stateful-primary
 spec:
   selector:
     matchLabels:
       app: postgresql-db-deployment
   serviceName: "postgres-db-service"
-  replicas: 3
+  replicas: 1
   minReadySeconds: 10
   template:
     metadata:
@@ -49,3 +49,27 @@ spec:
       resources:
         requests:
           storage: 500Mi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pg-data-primary-0
+spec:
+  capacity:
+    storage: 500Mi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: local-storage
+  local:
+    path: /vol/pg-data-primary-0
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/minikube
+          operator: In
+          values:
+          - minikube

@@ -1,14 +1,17 @@
+from datetime import timedelta
+
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
 
+from accounts.models import User
 from accounts.schemas import UserShowBriefly
-from common.security import get_token_data
+from common.security import create_access_token, get_token_data
+from posts.models import Comment, Post
 from posts.schemas import (
     PostShow, PostUpdate,
     CategoryCreate, CommentShow,
     Category as CategorySchema
 )
-from .fixtures import *
 
 POST_DATA = {
     'title': 'Post title 1',
@@ -19,10 +22,7 @@ POST_DATA = {
 TEST_CSRF_TOKEN = 'bvhahncoioerucmigcniquw2cewqc'
 
 
-def test_create_post_with_authorization(client: TestClient,
-                                        create_post_category: Category,
-                                        get_token: str,
-                                        db: Session) -> None:
+def test_create_post_with_authorization(client, create_post_category, get_token: str, db) -> None:
     """
     Test create post behalf current authenticated user.
     """
@@ -50,9 +50,7 @@ def test_create_post_with_authorization(client: TestClient,
     assert PostShow(**response_data) == PostShow(**created_post_dict)
 
 
-def test_create_post_without_authentication(client: TestClient,
-                                            create_post_category: Category,
-                                            user_for_token: User) -> None:
+def test_create_post_without_authentication(client, create_post_category, user_for_token) -> None:
     """
     Test create post without authentication.
     """
@@ -70,9 +68,7 @@ def test_create_post_without_authentication(client: TestClient,
     assert response.json() == {'detail': 'Not authenticated'}
 
 
-def test_create_post_if_csrf_tokens_mismatch(client: TestClient,
-                                             create_post_category: Category,
-                                             user_for_token: User) -> None:
+def test_create_post_if_csrf_tokens_mismatch(client, create_post_category, user_for_token) -> None:
     """
     Test create post if csrf tokens in request header and client cookies are mismatch
     """
@@ -90,9 +86,7 @@ def test_create_post_if_csrf_tokens_mismatch(client: TestClient,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_create_post_without_particular_scopes(client: TestClient,
-                                               create_post_category: Category,
-                                               create_multiple_users: list[User]) -> None:
+def test_create_post_without_particular_scopes(client, create_post_category, create_multiple_users: list[User]) -> None:
     """
     Test create post without particular scope for endpoint.
     """
@@ -116,7 +110,7 @@ def test_create_post_without_particular_scopes(client: TestClient,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_create_category_with_authorization(client: TestClient, get_token: str) -> None:
+def test_create_category_with_authorization(client, get_token: str) -> None:
     """
     Test create category for posts.
     """
@@ -135,7 +129,7 @@ def test_create_category_with_authorization(client: TestClient, get_token: str) 
     assert response.json()['name'] == 'Computers'
 
 
-def test_create_category_without_authentication(client: TestClient) -> None:
+def test_create_category_without_authentication(client) -> None:
     """
     Test create category for posts without authentication.
     """
@@ -151,7 +145,7 @@ def test_create_category_without_authentication(client: TestClient) -> None:
     assert response.json() == {'detail': 'Not authenticated'}
 
 
-def test_create_category_without_particular_scopes(client: TestClient, create_multiple_users: list[User]) -> None:
+def test_create_category_without_particular_scopes(client, create_multiple_users: list[User]) -> None:
     """
     Test create category for posts without authorization with appropriate scope
     """
@@ -172,7 +166,7 @@ def test_create_category_without_particular_scopes(client: TestClient, create_mu
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_create_category_if_csrf_tokens_mismatch(client: TestClient, get_token: str) -> None:
+def test_create_category_if_csrf_tokens_mismatch(client, get_token: str) -> None:
     """
     Test create category for posts if csrf tokens in request header and client cookies are mismatch.
     """
@@ -191,7 +185,7 @@ def test_create_category_if_csrf_tokens_mismatch(client: TestClient, get_token: 
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_read_post(client: TestClient, create_posts_for_user: list[Post]) -> None:
+def test_read_post(client, create_posts_for_user: list[Post]) -> None:
     """
     Test read post by its id.
     """
@@ -209,7 +203,7 @@ def test_read_post(client: TestClient, create_posts_for_user: list[Post]) -> Non
     assert PostShow(**response_data) == PostShow(**post_data_dict)
 
 
-def test_read_posts(client: TestClient, create_posts_for_user: list[Post]) -> None:
+def test_read_posts(client, create_posts_for_user: list[Post]) -> None:
     """
     Test read all posts in the database.
     """
@@ -236,7 +230,7 @@ def test_read_posts(client: TestClient, create_posts_for_user: list[Post]) -> No
     assert PostShow(**response_data[1]) == PostShow(**post2_data)
 
 
-def test_read_post_categories(client: TestClient, create_post_category: Category) -> None:
+def test_read_post_categories(client, create_post_category) -> None:
     """
     Test read all posts categories.
     """
@@ -247,9 +241,7 @@ def test_read_post_categories(client: TestClient, create_post_category: Category
     assert CategorySchema(**jsonable_encoder(create_post_category)) == CategorySchema(**response_data[0])
 
 
-def test_update_post_with_authorization(client: TestClient,
-                                        create_posts_for_user: list[Post],
-                                        get_token: str) -> None:
+def test_update_post_with_authorization(client, create_posts_for_user: list[Post], get_token: str) -> None:
     """
     Update post by passed post_id with corresponding authorization scope.
     """
@@ -289,8 +281,7 @@ def test_update_post_with_authorization(client: TestClient,
     assert PostShow(**response_data) == expected_data
 
 
-def test_update_post_without_authentication(client: TestClient,
-                                            create_posts_for_user: list[Post]) -> None:
+def test_update_post_without_authentication(client, create_posts_for_user: list[Post]) -> None:
     """
     Update post by passed post_id without authentication.
     """
@@ -313,8 +304,7 @@ def test_update_post_without_authentication(client: TestClient,
     assert response.json() == {'detail': 'Not authenticated'}
 
 
-def test_update_post_if_csrf_tokens_mismatch(client: TestClient,
-                                             create_posts_for_user: list[Post]) -> None:
+def test_update_post_if_csrf_tokens_mismatch(client, create_posts_for_user: list[Post]) -> None:
     """
     Update post by passed post_id if csrf tokens in request header and client cookies are mismatch.
     """
@@ -337,10 +327,7 @@ def test_update_post_if_csrf_tokens_mismatch(client: TestClient,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_delete_post_with_authorization(client: TestClient,
-                                        get_token: str,
-                                        create_posts_for_user: list[Post],
-                                        db: Session):
+def test_delete_post_with_authorization(client, get_token: str, create_posts_for_user: list[Post], db):
     """
     Test delete post if user has appropriate authorization scope, and it is a post's owner.
     """
@@ -359,7 +346,7 @@ def test_delete_post_with_authorization(client: TestClient,
     assert db.get(Post, post_for_delete.id) is None
 
 
-def test_delete_post_not_by_its_owner(client: TestClient,
+def test_delete_post_not_by_its_owner(client,
                                       create_multiple_users: list[User],
                                       create_posts_for_user: list[Post]) -> None:
     """
@@ -384,10 +371,7 @@ def test_delete_post_not_by_its_owner(client: TestClient,
     assert response.json() == {'detail': 'Post can be updated only by staff users or by its owner'}
 
 
-def test_delete_post_by_staff_users(client: TestClient,
-                                    get_token: str,
-                                    create_posts_for_user: list[Post],
-                                    db: Session) -> None:
+def test_delete_post_by_staff_users(client, get_token: str, create_posts_for_user: list[Post], db) -> None:
     """
     Test delete post if user has appropriate authorization scope, and it is a staff user.
     """
@@ -410,7 +394,7 @@ def test_delete_post_by_staff_users(client: TestClient,
     assert db.get(Post, post_for_delete.id) is None
 
 
-def test_delete_post_not_by_its_owner_if_csrf_tokens_mismatch(client: TestClient,
+def test_delete_post_not_by_its_owner_if_csrf_tokens_mismatch(client,
                                                               create_multiple_users: list[User],
                                                               create_posts_for_user: list[Post]) -> None:
     """
@@ -436,10 +420,7 @@ def test_delete_post_not_by_its_owner_if_csrf_tokens_mismatch(client: TestClient
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_create_comment_with_authorization(client: TestClient,
-                                           get_token: str,
-                                           db: Session,
-                                           create_posts_for_user: list[Post]) -> None:
+def test_create_comment_with_authorization(client, get_token: str, db, create_posts_for_user: list[Post]) -> None:
     """
     Test create comment for any post if user is authorized with appropriate scope.
     """
@@ -465,7 +446,7 @@ def test_create_comment_with_authorization(client: TestClient,
     assert response_data['body'] == f'Comment for post with id {post_for_comment.id}'
 
 
-def test_create_comment_without_particular_scopes(client: TestClient,
+def test_create_comment_without_particular_scopes(client,
                                                   create_posts_for_user: list[Post],
                                                   create_multiple_users: list[User]) -> None:
     """
@@ -489,7 +470,7 @@ def test_create_comment_without_particular_scopes(client: TestClient,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_create_comment_if_post_does_not_exist(client: TestClient, get_token: str) -> None:
+def test_create_comment_if_post_does_not_exist(client, get_token: str) -> None:
     """
     Test create comment if post with passed id does not exist.
     """
@@ -507,7 +488,7 @@ def test_create_comment_if_post_does_not_exist(client: TestClient, get_token: st
     assert response.json() == {'detail': 'Post with passed id does not exists'}
 
 
-def test_create_comment_if_csrf_tokens_mismatch(client: TestClient,
+def test_create_comment_if_csrf_tokens_mismatch(client,
                                                 create_posts_for_user: list[Post],
                                                 create_multiple_users: list[User]) -> None:
     """
@@ -531,7 +512,7 @@ def test_create_comment_if_csrf_tokens_mismatch(client: TestClient,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
+def test_set_comment_like_or_dislike_with_particular_scope(client,
                                                            get_token: str,
                                                            create_comments_for_user: list[Comment]) -> None:
     """
@@ -638,7 +619,7 @@ def test_set_comment_like_or_dislike_with_particular_scope(client: TestClient,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
 
-def test_set_comment_like_or_dislike_if_post_does_not_exist(client: TestClient, get_token: str) -> None:
+def test_set_comment_like_or_dislike_if_post_does_not_exist(client, get_token: str) -> None:
     """
     Test set like or dislike if passed comment does not exist by its id.
     """
@@ -656,7 +637,7 @@ def test_set_comment_like_or_dislike_if_post_does_not_exist(client: TestClient, 
     assert response.json() == {'detail': 'Comment with passed id does not exists'}
 
 
-def test_set_comment_like_or_dislike_if_passed_wrong_command(client: TestClient,
+def test_set_comment_like_or_dislike_if_passed_wrong_command(client,
                                                              get_token: str,
                                                              create_comments_for_user: list[Comment]) -> None:
     """
@@ -678,7 +659,7 @@ def test_set_comment_like_or_dislike_if_passed_wrong_command(client: TestClient,
     assert response.json() == {'detail': 'Action is either like or dislike. Action <wrong> was passed'}
 
 
-def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client: TestClient,
+def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client,
                                                              get_token: str,
                                                              create_comments_for_user: list[Comment]) -> None:
     """
@@ -700,9 +681,7 @@ def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client: TestClient,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_update_comment_with_particular_scope(client: TestClient,
-                                              create_comments_for_user: list[Comment],
-                                              get_token: str) -> None:
+def test_update_comment_with_particular_scope(client, create_comments_for_user: list[Comment], get_token: str) -> None:
     """
     Test update comment with passed comment_id if user has appropriate scope,
     and user is owner of that comment.
@@ -724,10 +703,7 @@ def test_update_comment_with_particular_scope(client: TestClient,
     assert CommentShow(**jsonable_encoder(comment_for_update)) == CommentShow(**response.json())
 
 
-def test_update_comment_if_user_is_staff(client: TestClient,
-                                         create_comments_for_user: list[Comment],
-                                         get_token: str,
-                                         db: Session):
+def test_update_comment_if_user_is_staff(client, create_comments_for_user: list[Comment], get_token: str, db):
     """
     Test update comment with passed comment_id if user has appropriate scope,
     and user is a staff user.
@@ -752,11 +728,11 @@ def test_update_comment_if_user_is_staff(client: TestClient,
     assert CommentShow(**jsonable_encoder(comment_for_update)) == CommentShow(**response.json())
 
 
-def test_update_comment_if_user_is_not_staff_or_owner(client: TestClient,
+def test_update_comment_if_user_is_not_staff_or_owner(client,
                                                       create_comments_for_user: list[Comment],
                                                       create_multiple_users: list[User],
                                                       get_token: str,
-                                                      db: Session) -> None:
+                                                      db) -> None:
     """
     Test update comment with passed comment_id if user has appropriate scope,
     but user not a staff.
@@ -793,7 +769,7 @@ def test_update_comment_if_user_is_not_staff_or_owner(client: TestClient,
     assert response.json() == {'detail': 'Comment can be updated only by staff users or by its owner'}
 
 
-def test_update_comment_without_particular_scope(client: TestClient,
+def test_update_comment_without_particular_scope(client,
                                                  create_comments_for_user: list[Comment],
                                                  create_multiple_users: list[User]) -> None:
     """
@@ -819,7 +795,7 @@ def test_update_comment_without_particular_scope(client: TestClient,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_update_comment_if_passed_wrong_comment_id(client: TestClient, get_token: str) -> None:
+def test_update_comment_if_passed_wrong_comment_id(client, get_token: str) -> None:
     """
     Test update comment with passed wrong comment_id which does not exist in the db.
     """
@@ -838,7 +814,7 @@ def test_update_comment_if_passed_wrong_comment_id(client: TestClient, get_token
     assert response.json() == {'detail': 'Comment with passed id does not exists'}
 
 
-def test_update_comment_if_csrf_tokens_mismatch(client: TestClient,
+def test_update_comment_if_csrf_tokens_mismatch(client,
                                                 create_comments_for_user: list[Comment],
                                                 get_token: str) -> None:
     """
@@ -861,10 +837,10 @@ def test_update_comment_if_csrf_tokens_mismatch(client: TestClient,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_delete_comment_with_particular_scope(client: TestClient,
+def test_delete_comment_with_particular_scope(client,
                                               get_token: str,
                                               create_comments_for_user: list[Comment],
-                                              db: Session) -> None:
+                                              db) -> None:
     """
     Test delete comment by its id if user has appropriate access scope for this action.
     """
@@ -883,7 +859,7 @@ def test_delete_comment_with_particular_scope(client: TestClient,
     assert db.get(Comment, comment_for_delete.id) is None
 
 
-def test_delete_comment_if_passed_wrong_comment_id(client: TestClient, get_token: str) -> None:
+def test_delete_comment_if_passed_wrong_comment_id(client, get_token: str) -> None:
     """
     Test delete comment by its id if passed id does not matched with any comment.
     """
@@ -901,11 +877,11 @@ def test_delete_comment_if_passed_wrong_comment_id(client: TestClient, get_token
     assert response.json() == {'detail': 'Comment with passed id does not exists'}
 
 
-def test_delete_comment_if_user_not_owner_or_staff(client: TestClient,
+def test_delete_comment_if_user_not_owner_or_staff(client,
                                                    get_token: str,
                                                    create_comments_for_user: list[Comment],
                                                    create_multiple_users: list[User],
-                                                   db: Session) -> None:
+                                                   db) -> None:
     """
     Test delete comment by its id if user not staff or comment's owner.
     """
@@ -927,7 +903,7 @@ def test_delete_comment_if_user_not_owner_or_staff(client: TestClient,
     assert response.json() == {'detail': 'Comment can be updated only by staff users or by its owner'}
 
 
-def test_delete_comment_without_particular_scope(client: TestClient,
+def test_delete_comment_without_particular_scope(client,
                                                  create_comments_for_user: list[Comment],
                                                  create_multiple_users: list[User]) -> None:
     """
@@ -951,7 +927,7 @@ def test_delete_comment_without_particular_scope(client: TestClient,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_delete_comment_if_csrf_tokens_mismatch(client: TestClient,
+def test_delete_comment_if_csrf_tokens_mismatch(client,
                                                 create_comments_for_user: list[Comment],
                                                 create_multiple_users: list[User]) -> None:
     """

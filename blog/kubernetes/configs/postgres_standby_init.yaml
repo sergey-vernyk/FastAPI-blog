@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-standby-init
+data:
+  standby-init: |
+    #!/bin/bash
+
+    set -e
+    
+    # run backup if 'data' folded is empty, run server otherwise
+    if [[ -z "$(ls -A /var/lib/postgresql/data)" ]]; then
+
+        if [[ -z "$POSTGRES_REPLICA_PASSWORD" ]]; then
+            echo "'POSTGRES_REPLICA_PASSWORD' environment variable not provided. Exit"
+            exit 1
+        fi
+
+        # set variables for backup
+        hostname="postgresql-db-stateful-0.postgres-db-service.default.svc.cluster.local"
+        port="5432"
+        username="replica_user"
+        password="$POSTGRES_REPLICA_PASSWORD"
+        backup_directory="/var/lib/postgresql/data"
+
+        # export password for pg_basebackup
+        export PGPASSWORD="$password"
+
+        echo "Run 'pg_basebackup'"
+        pg_basebackup -h "$hostname" -p "$port" -D "$backup_directory" -U "$username" -v -R
+
+        # copy config files for standby server and change the ownership to postgres user
+        cp /config/postgresql.conf /var/lib/postgresql/data/postgresql.conf
+        cp /config/pg_hba.conf /var/lib/postgresql/data/pg_hba.conf
+        
+        chown -v postgres:postgres /var/lib/postgresql/data/postgresql.conf
+        chown -v postgres:postgres /var/lib/postgresql/data/pg_hba.conf
+    fi

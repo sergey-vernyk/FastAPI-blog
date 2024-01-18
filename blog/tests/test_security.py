@@ -1,15 +1,22 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from jose import jwt
 from pytest import raises
 
+from accounts.models import User
 from accounts.schemas import TokenData
-from common.security import verify_password_or_exception, get_token_data
-from config import Settings
-from .fixtures import *
+from accounts.utils import LimitedLifeTokenGenerator
+from common.security import (
+    create_access_token,
+    verify_password_or_exception,
+    get_token_data, 
+    get_password_hash
+)
+from config import get_settings
+from .conftest import USER_DATA
 
-settings = Settings()
+settings = get_settings()
 
 
 def test_verify_passed_passwords_for_authentication_success(user_for_token: User) -> None:
@@ -45,6 +52,9 @@ def test_get_token_data(get_token: str, user_for_token: User):
 
 
 def test_create_access_token(create_multiple_users: list[User]) -> None:
+    """
+    Test create access JWT token with scopes and verify its expiry date.
+    """
     data = {
         'sub': create_multiple_users[0].username,
         'scopes': ['scope:read', 'scope:write', 'scope:delete']
@@ -57,3 +67,51 @@ def test_create_access_token(create_multiple_users: list[User]) -> None:
     # check whether access token has not expired
     assert datetime.fromtimestamp(decoded_token['exp']) - datetime.now() <= timedelta(
         minutes=5), 'Token have already expired'
+
+
+class TestLimitedLifeTokenGenerator:
+
+    def setup_method(self) -> None:
+        self.token_generator = LimitedLifeTokenGenerator(
+            secret_key=settings.secret_key_token_generator,
+            token_expired_timeout=10
+        )
+
+    def test_make_token(self, user_for_token) -> None:
+        """
+        Test make limited life token. We can check only availability of token,
+        and its format, since generator make different token each time.
+        """
+        token = self.token_generator.make_token(user_for_token)
+        assert len(token) > 0
+        assert '-' in token
+
+    def test_check_token_success(self, user_for_token) -> None:
+        """
+        Test check generated token if there was no conditions
+        to change hash value which token contains.
+        """
+        token = self.token_generator.make_token(user_for_token)
+        result = self.token_generator.check_token(user_for_token, token)
+        assert result is True
+
+    def test_check_token_expired(self, user_for_token) -> None:
+        """
+        Test check generated token when token lifetime is expired.
+        We imitate changing token expiration time as if was over.
+        """
+        self.token_generator._token_expired_time = -1
+        token = self.token_generator.make_token(user_for_token)
+        result = self.token_generator.check_token(user_for_token, token)
+        assert result is False
+
+    def test_check_token_if_changed_hash_value(self, user_for_token, db) -> None:
+        """
+        Test check generated token when it has been changed i.e. when has been changed token's hash value.
+        User's data could has been changed (e.g. password, email, last login timestamp etc.)
+        """
+        token = self.token_generator.make_token(user_for_token)
+        new_password = get_password_hash('new_strong_password')
+        db.query(User).filter(User.id == user_for_token.id).update({'hashed_password': new_password})
+        result = self.token_generator.check_token(user_for_token, token)
+        assert result is False

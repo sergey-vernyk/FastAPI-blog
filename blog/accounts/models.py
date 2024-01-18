@@ -1,6 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Integer, String, Date, Text, DateTime
+from sqlalchemy import (
+    Boolean, Column, Integer,
+    String, Date, Text,
+    DateTime, ARRAY
+) 
 from sqlalchemy import types
 from sqlalchemy.orm import relationship
 
@@ -63,6 +67,7 @@ class User(Base):
     date_joined = Column('date_joined', DateTime(timezone=True), default=datetime.utcnow(), nullable=False)
     rating = Column('rating', Integer, default=0)
     about = Column('about', Text, nullable=True)
+    social_media_links = Column('social_media_links', ARRAY(String(2083)), default=[], nullable=True)
 
     def __repr__(self):
         return f'User `{self.username}`'

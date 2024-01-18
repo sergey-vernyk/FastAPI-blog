@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -9,9 +10,12 @@ from routers import posts_router, users_router
 Base.metadata.create_all(bind=engine)
 settings = get_settings()
 
+# define parent directory path for the directory `static` (for possibility using relative path)
+parent_dir_path = os.path.dirname(os.path.realpath(__file__))
+
 STATIC_DIRECTORY = ''
 if settings.dev_or_prod == 'dev':
-    STATIC_DIRECTORY = 'blog/static'
+    STATIC_DIRECTORY = f'{parent_dir_path}/static'
 elif settings.dev_or_prod == 'prod':
     STATIC_DIRECTORY = '/vol/static'
 

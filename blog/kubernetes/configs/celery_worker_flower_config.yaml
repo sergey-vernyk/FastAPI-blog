@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: celery-config
+data:
+  start-worker-flower.sh: |
+    #!/bin/sh
+
+    celery --app=celery_app.app worker --loglevel=INFO -D
+
+    # Wait for Celery worker to become ready
+    WAIT_CMD="celery --app=celery_app.app inspect ping"
+    until $WAIT_CMD | grep -q 'pong'; do
+        echo "Waiting for celery worker..."
+        sleep 1
+    done
+
+    # Start Celery Flower
+    echo "Start Flower"
+    celery --app=celery_app.app flower --port=5555

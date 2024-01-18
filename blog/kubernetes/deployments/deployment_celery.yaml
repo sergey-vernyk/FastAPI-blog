@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-deployment
+spec:
+  selector:
+    matchLabels:
+      app: celery-worker-deployment
+  template:
+    metadata:
+      labels:
+        app: celery-worker-deployment
+    spec:
+      containers:
+      - name: celery-worker-deployment
+        image: sergeyvernyk/blog_fastapi:0.1.6
+        command: ["/bin/sh"]
+        args: ["-c", "/scripts/start-worker-flower.sh"]
+        resources:
+          limits:
+            memory: "300Mi"
+            cpu: "150m"
+        envFrom:
+        - secretRef:
+            name: fastapi-secrets
+        volumeMounts:
+          - name: start-worker-flower
+            mountPath: /scripts
+        ports:
+          - containerPort: 5555
+            name: monitoring
+      volumes:
+        - name: start-worker-flower
+          configMap:
+            name: celery-config
+            defaultMode: 0777
+            items:
+            - key: start-worker-flower.sh
+              path: start-worker-flower.sh
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: celery-worker-service
+spec:
+  selector:
+    app: celery-worker-deployment
+  ports:
+  - port: 5555
+    targetPort: 5555
+    name: celery-monitor
+    nodePort: 30555
+  type: NodePort

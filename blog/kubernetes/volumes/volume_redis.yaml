@@ -1,17 +1,17 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: postgres-pg-data-0
+  name: redis-storage
 spec:
   capacity:
-    storage: 500Mi
+    storage: 50Mi
   volumeMode: Filesystem
   accessModes:
     - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Delete
+  persistentVolumeReclaimPolicy: Recycle
   storageClassName: local-storage
   local:
-    path: /vol/pg-data-0
+    path: /data/redis
     fsType: ext4
   nodeAffinity:
     required:
@@ -25,41 +25,17 @@ spec:
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: postgres-pg-data-1
+  name: redis-config
 spec:
   capacity:
-    storage: 500Mi
+    storage: 100Ki
   volumeMode: Filesystem
   accessModes:
     - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Delete
+  persistentVolumeReclaimPolicy: Recycle
   storageClassName: local-storage
   local:
-    path: /vol/pg-data-1
-    fsType: ext4
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: kubernetes.io/minikube
-          operator: In
-          values:
-          - minikube
----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: postgres-pg-data-2
-spec:
-  capacity:
-    storage: 500Mi
-  volumeMode: Filesystem
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Delete
-  storageClassName: local-storage
-  local:
-    path: /vol/pg-data-2
+    path: /data/redis-master
     fsType: ext4
   nodeAffinity:
     required:

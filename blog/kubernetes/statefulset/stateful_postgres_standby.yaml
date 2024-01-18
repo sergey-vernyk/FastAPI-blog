@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql-db-stateful-standby
+spec:
+  selector:
+    matchLabels:
+      app: postgresql-db-deployment
+  serviceName: "postgres-db-service"
+  minReadySeconds: 10
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: postgresql-db-deployment
+    spec:
+      containers:
+        - name: postgres-db-stateful-standby
+          image: postgres:14.6-alpine
+          ports:
+            - name: sql
+              containerPort: 5432
+          volumeMounts:
+            - name: postgres-pg-data-standby
+              mountPath: /var/lib/postgresql/data
+          envFrom:
+          - secretRef:
+              name: postgres-secrets
+      initContainers:
+        - name: init-standby-db
+          image: postgres:14.6-alpine
+          command: ["/bin/sh"]
+          args: ["-c", "/init/standby-init.sh"]
+          volumeMounts:
+            - name: postgres-pg-data-standby
+              mountPath: /var/lib/postgresql/data
+            - name: standby-config
+              mountPath: /config
+            - name: standby-init
+              mountPath: /init
+          env:  
+          - name: POSTGRES_REPLICA_PASSWORD
+            valueFrom:
+              secretKeyRef: 
+                name: postgres-secrets
+                key: POSTGRES_REPLICA_PASSWORD
+      volumes:
+        - name: standby-config
+          configMap:
+            name: postgres-standby-config
+            defaultMode: 0777
+            items:
+            - key: standby-config
+              path: postgresql.conf
+            - key: standby-hba
+              path: pg_hba.conf
+        - name: standby-init
+          configMap:
+            name: postgres-standby-init
+            defaultMode: 0777
+            items:
+            - key: standby-init
+              path: standby-init.sh
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-pg-data-standby
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: local-storage
+      volumeMode: Filesystem
+      resources:
+        requests:
+          storage: 500Mi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pg-data-standby-0
+spec:
+  capacity:
+    storage: 500Mi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: local-storage
+  local:
+    path: /vol/pg-data-standby-0
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/minikube
+          operator: In
+          values:
+          - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pg-data-standby-1
+spec:
+  capacity:
+    storage: 500Mi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: local-storage
+  local:
+    path: /vol/pg-data-standby-1
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/minikube
+          operator: In
+          values:
+          - minikube
