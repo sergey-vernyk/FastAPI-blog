@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: fastapi-blog-deployment
-        image: sergeyvernyk/blog_fastapi:0.1.6
+        image: sergeyvernyk/blog_fastapi:0.1.7
         resources:
           limits:
             memory: "256Mi"

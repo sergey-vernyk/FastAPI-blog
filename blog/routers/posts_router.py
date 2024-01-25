@@ -5,6 +5,7 @@ from fastapi import (
     Query, Security
 )
 from fastapi.encoders import jsonable_encoder
+from fastapi_cache.decorator import cache
 
 from accounts.models import User
 from common.utils import show_exception
@@ -77,6 +78,7 @@ async def create_category(category: schemas.CategoryCreate,
             response_model=schemas.PostShow,
             status_code=status.HTTP_200_OK,
             summary='Get post by passed `post_id`')
+@cache(expire=300)
 async def read_post(db: DatabaseDependency, post_id: int) -> schemas.PostShow:
     """
     Obtain post by its `post_id`.
@@ -92,6 +94,7 @@ async def read_post(db: DatabaseDependency, post_id: int) -> schemas.PostShow:
             response_model=list[schemas.PostShow],
             status_code=status.HTTP_200_OK,
             summary='Get all posts in the database')
+@cache(expire=300)
 async def read_posts(db: DatabaseDependency,
                      category: Annotated[str, Query(description='Post category')] = '',
                      skip: int = 0,
@@ -112,6 +115,7 @@ async def read_posts(db: DatabaseDependency,
             response_model=list[schemas.Category],
             status_code=status.HTTP_200_OK,
             summary='Get all post categories in the database')
+@cache(expire=300)
 async def read_post_categories(db: DatabaseDependency,
                                skip: int = 0,
                                limit: int = 100) -> list[Type[models.Category]]:

@@ -1,7 +1,12 @@
 import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.memcached import MemcachedBackend
+from pymemcache.client import base
 
 from config import get_settings
 from db_connection import Base, engine
@@ -9,6 +14,17 @@ from routers import posts_router, users_router
 
 Base.metadata.create_all(bind=engine)
 settings = get_settings()
+memcache_client = base.Client(server='localhost')
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> None:
+    """
+    Initialize cache for endpoints when application starts.
+    """
+    FastAPICache.init(MemcachedBackend(mcache=memcache_client), prefix='fast_api_cache')
+    yield
+
 
 # define parent directory path for the directory `static` (for possibility using relative path)
 parent_dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -24,6 +40,7 @@ Blog on FastAPI Python Framework with user authentication and authorization,
 blog post management, comments, search and filters, categories and tags, user's dashboard etc."""
 
 app = FastAPI(
+    lifespan=lifespan,
     swagger_ui_parameters={'persistAuthorization': True},
     title='BlogAPI',
     description=DESCRIPTION,

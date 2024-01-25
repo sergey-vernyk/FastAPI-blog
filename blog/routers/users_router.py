@@ -10,6 +10,7 @@ from fastapi import (
     Request
 )
 from fastapi.responses import UJSONResponse
+from fastapi_cache.decorator import cache
 
 from accounts import schemas, crud, tasks
 from accounts.models import User
@@ -184,6 +185,7 @@ async def delete_user_by_id(user_id: int,
             status_code=status.HTTP_200_OK,
             summary='Get all users in the database',
             dependencies=[Security(get_current_user, scopes=['user:read'])])
+@cache(expire=300)
 async def read_users(request: Request,
                      db: DatabaseDependency,
                      skip: int = 0,
@@ -200,6 +202,7 @@ async def read_users(request: Request,
             status_code=status.HTTP_200_OK,
             summary='Get user by passed `user_id`',
             dependencies=[Security(get_current_user, scopes=['user:read'])])
+@cache(expire=300)
 async def read_user_by_id(request: Request,
                           user_id: int,
                           db: DatabaseDependency) -> Union[HTTPException, schemas.UserShow]:
@@ -252,6 +255,7 @@ async def login_for_token(form_data: Annotated[OAuthFormWithDefaultScopes, Depen
 @router.get('/me',
             status_code=status.HTTP_200_OK,
             summary='Get info about current user')
+@cache(expire=300)
 async def read_users_me(request: Request,
                         current_user: SecurityScopesDependency(scopes=['me:read'])) -> schemas.UserShow:
     """
@@ -284,6 +288,7 @@ async def update_user_info(request: Request,
             response_model=list[UserPostsShow],
             status_code=status.HTTP_200_OK,
             summary='Get posts that published by current user')
+@cache(expire=300)
 async def get_user_posts(db: DatabaseDependency,
                          current_user: SecurityScopesDependency(scopes=['post:read']),
                          apply_filter: Annotated[bool, Query(
@@ -320,6 +325,7 @@ async def get_user_posts(db: DatabaseDependency,
             response_model=list[UserCommentsShow],
             status_code=status.HTTP_200_OK,
             summary='Get all comments related to current user')
+@cache(expire=300)
 async def get_users_comments(db: DatabaseDependency,
                              current_user: SecurityScopesDependency(scopes=['comment:read']),
                              rate_status: Annotated[str, Query(
