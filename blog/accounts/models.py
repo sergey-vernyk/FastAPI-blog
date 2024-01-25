@@ -4,7 +4,7 @@ from sqlalchemy import (
     Boolean, Column, Integer,
     String, Date, Text,
     DateTime, ARRAY
-) 
+)
 from sqlalchemy import types
 from sqlalchemy.orm import relationship
 

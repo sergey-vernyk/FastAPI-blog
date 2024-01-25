@@ -10,7 +10,7 @@ from accounts.utils import LimitedLifeTokenGenerator
 from common.security import (
     create_access_token,
     verify_password_or_exception,
-    get_token_data, 
+    get_token_data,
     get_password_hash
 )
 from config import get_settings

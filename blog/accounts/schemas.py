@@ -18,6 +18,7 @@ class UserCreate(BaseModel):
     about: Optional[str] = Field(default=None, max_length=255)
     social_media_links: Optional[list[str]] = Field(default=[], max_length=2083)
 
+
 class UserShow(BaseModel):
     """
     Information which displays while obtaining user.
