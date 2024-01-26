@@ -1,6 +1,10 @@
 from functools import lru_cache
+import os
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# define parent directory path for the directory `static` (for possibility using relative path)
+parent_dir_path = os.path.dirname(os.path.realpath(__file__))
 
 
 class Settings(BaseSettings):
@@ -39,7 +43,7 @@ class Settings(BaseSettings):
     oauth2_secret: str
     oauth2_redirect_uri: str
 
-    model_config = SettingsConfigDict(env_file='blog/.env', env_file_encoding='utf-8')
+    model_config = SettingsConfigDict(env_file=f'{parent_dir_path}/.env', env_file_encoding='utf-8')
 
 
 @lru_cache
