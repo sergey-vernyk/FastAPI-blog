@@ -1,0 +1,63 @@
+name: FastAPI CI
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    services:
+      postgres:
+        image: postgres:14.6-alpine
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+        - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./blog
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Create postgres user with createdb privilege
+      run: |
+        sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE USER ${{ secrets.DATABASE_USER }} WITH PASSWORD '\''${{ secrets.DATABASE_PASSWORD }}'\'' CREATEDB;'"
+        sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE DATABASE ${{ secrets.DATABASE_NAME }} OWNER ${{ secrets.DATABASE_USER }};'"
+        sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE USER ${{ secrets.DATABASE_USER_TEST }} WITH PASSWORD '\''${{ secrets.DATABASE_PASSWORD_TEST}}'\'' CREATEDB;'"
+        sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE DATABASE ${{ secrets.DATABASE_NAME_TEST }} OWNER ${{ secrets.DATABASE_USER_TEST }};'"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt    
+    - name: Lint with flake8
+      run: |
+        flake8
+    - name: Create env file
+      run: |
+        echo "${{ secrets.ENV_FILE }}" > .env # create file with environment variables
+    - name: Test with pytest and coverage
+      run: |
+        coverage run --source '.' --omit '*/tests/*' -m pytest
+    - name: Coverage report
+      run: |
+        coverage report
