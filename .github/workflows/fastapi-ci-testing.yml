@@ -13,6 +13,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11"]
+        poetry-version: ["1.7"]
 
     services:
       postgres:
@@ -39,28 +40,54 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+
     - name: Create postgres user with createdb privilege
       run: |
         sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE USER ${{ secrets.DATABASE_USER }} WITH PASSWORD '\''${{ secrets.DATABASE_PASSWORD }}'\'' CREATEDB;'"
         sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE DATABASE ${{ secrets.DATABASE_NAME }} OWNER ${{ secrets.DATABASE_USER }};'"
         sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE USER ${{ secrets.DATABASE_USER_TEST }} WITH PASSWORD '\''${{ secrets.DATABASE_PASSWORD_TEST}}'\'' CREATEDB;'"
         sudo docker exec ${{ job.services.postgres.id }} sh -c "psql -U postgres -p 5432 -c 'CREATE DATABASE ${{ secrets.DATABASE_NAME_TEST }} OWNER ${{ secrets.DATABASE_USER_TEST }};'"
+
+    - name: Cache poetry install
+      id: cache-poetry
+      uses: actions/cache@v4
+      with:
+        path: ~/.local
+        key: python-${{ matrix.python-version }}-poetry-v${{ matrix.poetry-version }}
+        
+    # the `if` statement ensures this only runs on a cache miss
     - name: Install poetry
       run: |
         python -m pip install --upgrade pip
         python -m pip install poetry
+        if: steps.cache-poetry.outputs.cache-hit != 'true'
+
+    - name: Cache dependencies
+      id: cache-deps
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pypoetry
+        key: python-${{ matrix.python-version }}-pydeps-${{ hashFiles('**/poetry.lock') }}
+
+    # the `if` statement ensures this only runs on a cache miss
     - name: Install dependencies
       run: |
-        python -m poetry install
+        poetry install --no-root
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+
     - name: Lint with flake8
       run: |
-        python -m poetry run flake8
+        poetry run flake8
+
+    # create file with environment variables
     - name: Create env file
       run: |
-        echo "${{ secrets.ENV_FILE }}" > .env # create file with environment variables
+        echo "${{ secrets.ENV_FILE }}" > .env 
+
     - name: Test with pytest and coverage
       run: |
-        python -m poetry run coverage run --source '.' --omit '*/tests/*' -m pytest
+        poetry run coverage run --source '.' --omit '*/tests/*' -m pytest
+
     - name: Coverage report
       run: |
-        python -m run coverage report
+        poetry run coverage report
