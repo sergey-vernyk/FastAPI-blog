@@ -54,13 +54,13 @@ jobs:
         python -m poetry install
     - name: Lint with flake8
       run: |
-        flake8
+        python -m poetry run flake8
     - name: Create env file
       run: |
         echo "${{ secrets.ENV_FILE }}" > .env # create file with environment variables
     - name: Test with pytest and coverage
       run: |
-        python -p poetry run coverage run --source '.' --omit '*/tests/*' -m pytest
+        python -m poetry run coverage run --source '.' --omit '*/tests/*' -m pytest
     - name: Coverage report
       run: |
         python -m run coverage report
