@@ -54,13 +54,13 @@ jobs:
       with:
         path: ~/.local
         key: python-${{ matrix.python-version }}-poetry-v${{ matrix.poetry-version }}
-        
+
     # the `if` statement ensures this only runs on a cache miss
-    - name: Install poetry
+    - if: ${{ steps.cache-poetry.outputs.cache-hit != 'true' }}
+      name: Install poetry
       run: |
         python -m pip install --upgrade pip
         python -m pip install poetry
-        if: steps.cache-poetry.outputs.cache-hit != 'true'
 
     - name: Cache dependencies
       id: cache-deps
@@ -70,24 +70,19 @@ jobs:
         key: python-${{ matrix.python-version }}-pydeps-${{ hashFiles('**/poetry.lock') }}
 
     # the `if` statement ensures this only runs on a cache miss
-    - name: Install dependencies
-      run: |
-        poetry install --no-root
-        if: steps.cache-deps.outputs.cache-hit != 'true'
+    - if: ${{ steps.cache-deps.outputs.cache-hit != 'true' }}
+      name: Install dependencies
+      run: poetry install --no-root
 
     - name: Lint with flake8
-      run: |
-        poetry run flake8
+      run: poetry run flake8
 
     # create file with environment variables
     - name: Create env file
-      run: |
-        echo "${{ secrets.ENV_FILE }}" > .env 
+      run: echo "${{ secrets.ENV_FILE }}" > .env 
 
     - name: Test with pytest and coverage
-      run: |
-        poetry run coverage run --source '.' --omit '*/tests/*' -m pytest
+      run: poetry run coverage run --source '.' --omit '*/tests/*' -m pytest
 
     - name: Coverage report
-      run: |
-        poetry run coverage report
+      run: poetry run coverage report
