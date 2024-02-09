@@ -18,8 +18,8 @@ server {
     listen 443 ssl;
     server_name             ${DOMAIN};
 
-    ssl_certificate         /vol/certs/192.168.59.100.pem;
-    ssl_certificate_key     /vol/certs/192.168.59.100-key.pem;
+    ssl_certificate         /vol/certs/${CERT_NAME};
+    ssl_certificate_key     /vol/certs/${CERT_KEY_NAME};
 
     ssl_protocols           TLSv1.2 TLSv1.3;
 
@@ -29,7 +29,7 @@ server {
     # forbidden to show nginx version in the Header Response Server field
     server_tokens           off;
 
-    location /api/v1/ {
+    location /api/v${API_VERSION}/ {
         proxy_pass              https://fast_api_blog/;
         proxy_set_header        X-Forwarded-Proto https;  # header for fast api in order to identify HTTPS
         client_max_body_size    10M;

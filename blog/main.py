@@ -18,7 +18,7 @@ memcache_client = base.Client(server='localhost')
 
 
 @asynccontextmanager
-async def lifespan(application: FastAPI) -> None:
+async def lifespan(application: FastAPI):
     """
     Initialize cache for endpoints when application starts.
     """

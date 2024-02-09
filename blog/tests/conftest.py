@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 from typing import Generator
 
@@ -15,6 +16,7 @@ from dependencies import get_db
 from dependencies import oauth2_scheme
 from main import app
 from posts.models import Post, Category, Comment
+from routers.posts_router import LOGS_DIRECTORY
 
 settings = get_settings()
 
@@ -49,6 +51,7 @@ def db_engine() -> Generator[Engine, None, None]:
     yield eng
 
     Base.metadata.drop_all(bind=eng)
+    clean_log_files_content(LOGS_DIRECTORY)
 
 
 @pytest.fixture(scope='function')
@@ -183,7 +186,7 @@ def create_posts_for_user(user_for_token: User, db: Session):
 
 
 @pytest.fixture(scope='function')
-def create_comments_for_user(db: Session, create_posts_for_user: list[Post]):
+def create_comments_to_posts_for_user(db: Session, create_posts_for_user: list[Post]):
     """
     Create comments for posts, owner of which is current authenticated user.
     """
@@ -199,11 +202,18 @@ def create_comments_for_user(db: Session, create_posts_for_user: list[Post]):
         owner_id=posts[0].owner_id
     )
 
-    db.add_all([comment1, comment2])
+    comment3 = Comment(
+        body=f'Comment body3 for post {posts[1].id}',
+        post_id=posts[1].id,
+        owner_id=posts[0].owner_id
+    )
+
+    db.add_all([comment1, comment2, comment3])
     db.commit()
     db.refresh(comment1)
     db.refresh(comment2)
-    yield [comment1, comment2]
+    db.refresh(comment3)
+    yield [comment1, comment2, comment3]
 
 
 @pytest.fixture(scope='function')
@@ -216,3 +226,14 @@ def create_post_category(db: Session):
     db.commit()
     db.refresh(category)
     yield category
+
+
+def clean_log_files_content(path: str) -> None:
+    """
+    Clean log files content after all testing.
+    """
+    for p in (f'{path}/posts_endpoints.log', f'{path}/users_endpoints.log'):
+        if os.path.getsize(p) > 0:
+            if os.path.isfile(p):
+                with open(p, 'w', encoding='utf-8') as file:
+                    file.truncate(0)

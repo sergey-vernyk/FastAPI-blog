@@ -3,10 +3,10 @@ import hmac
 import os
 from base64 import urlsafe_b64decode
 from datetime import datetime
+from pathlib import Path
 from secrets import compare_digest
 from typing import Type, Union
 
-from pathlib import Path
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,6 @@ from accounts import schemas, crud
 from accounts.models import User
 from common.utils import base36decode, base36encode
 from config import get_settings
-
 
 settings = get_settings()
 

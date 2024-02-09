@@ -1,4 +1,5 @@
-from typing import Type, Annotated, Union
+import logging
+from typing import Literal, Type, Annotated, Union
 
 from fastapi import (
     APIRouter, status, HTTPException,
@@ -9,14 +10,29 @@ from fastapi_cache.decorator import cache
 
 from accounts.models import User
 from common.utils import show_exception
+from config import get_settings
 from dependencies import (
     DatabaseDependency,
     get_current_user,
     SecurityScopesDependency,
     CsrfVerifyDependency
 )
+from loggers.logs_config import (
+    set_endpoint_logger,
+    FORMATTER_FORMAT,
+    FORMATTER_DATA_FORMAT,
+    LOGS_DIRECTORY
+)
 from posts import schemas, models, crud
 from posts.utils import create_post_show_instance_with_extra_attributes, is_object_owner_or_staff_user
+
+settings = get_settings()
+
+endpoints_logger = logging.getLogger(__name__)
+endpoints_formatter = logging.Formatter(fmt=FORMATTER_FORMAT, datefmt=FORMATTER_DATA_FORMAT)
+endpoint_handler = logging.FileHandler(filename=f'{LOGS_DIRECTORY}/posts_endpoints.log', encoding='utf-8')
+endpoint_handler.setFormatter(endpoints_formatter)
+endpoints_logger.addHandler(endpoint_handler)
 
 router = APIRouter()
 
@@ -26,6 +42,7 @@ router = APIRouter()
              status_code=status.HTTP_201_CREATED,
              summary='Create post',
              dependencies=[CsrfVerifyDependency])
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/create')
 async def create_post(current_user: Annotated[User, Security(get_current_user, scopes=['post:create'])],
                       post: schemas.PostCreate,
                       db: DatabaseDependency) -> Union[schemas.PostShow, HTTPException]:
@@ -79,6 +96,7 @@ async def create_category(category: schemas.CategoryCreate,
             status_code=status.HTTP_200_OK,
             summary='Get post by passed `post_id`')
 @cache(expire=300)
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/read/{post_id}')
 async def read_post(db: DatabaseDependency, post_id: int) -> schemas.PostShow:
     """
     Obtain post by its `post_id`.
@@ -98,14 +116,21 @@ async def read_post(db: DatabaseDependency, post_id: int) -> schemas.PostShow:
 async def read_posts(db: DatabaseDependency,
                      category: Annotated[str, Query(description='Post category')] = '',
                      skip: int = 0,
-                     limit: int = 100) -> list[schemas.PostShow]:
+                     limit: int = 100,
+                     sort_by: Annotated[Literal[
+                         'created_asc',
+                         'created_desc',
+                         'rating_asc',
+                         'rating_desc',
+                         'post_comments_asc',
+                         'post_comments_desc'
+                     ], Query(description='Sort criteria')] = 'created_desc') -> list[schemas.PostShow]:
     """
     Obtain all posts with `skip`, `limit` and appropriate `category` if it provided.
     """
-    query = crud.get_posts_query(category, skip, limit)
+    query = crud.get_posts_query(category, skip, limit, sort_by)
     # rows with post's scalars values as list
     posts_rows = db.execute(query).mappings()
-    # result list for response
     posts_show_list = [create_post_show_instance_with_extra_attributes(row) for row in posts_rows]
 
     return posts_show_list
@@ -130,6 +155,7 @@ async def read_post_categories(db: DatabaseDependency,
             status_code=status.HTTP_200_OK,
             summary='Update post by passed `post_id`',
             dependencies=[CsrfVerifyDependency])
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/update/{post_id}')
 def update_post(post_id: int,
                 data: schemas.PostUpdate,
                 current_user: SecurityScopesDependency(scopes=['post:update']),
@@ -162,6 +188,7 @@ def update_post(post_id: int,
                status_code=status.HTTP_204_NO_CONTENT,
                summary='Delete post by passed `post_id`',
                dependencies=[CsrfVerifyDependency])
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/delete/{post_id}')
 async def delete_post(db: DatabaseDependency,
                       current_user: SecurityScopesDependency(scopes=['post:delete']),
                       post_id: int) -> None:
@@ -228,6 +255,7 @@ async def set_comment_like_or_dislike(db: DatabaseDependency,
             status_code=status.HTTP_200_OK,
             summary='Update comment with `comment_id`',
             dependencies=[CsrfVerifyDependency])
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/comment/update/{comment_id}')
 async def update_comment(db: DatabaseDependency,
                          current_user: SecurityScopesDependency(scopes=['comment:update']),
                          data: schemas.CommentCreateOrUpdate,
@@ -256,7 +284,7 @@ async def remove_comment(db: DatabaseDependency,
     Delete comment by passed `comment_id`.
     """
     db_comment = crud.get_comment_by_id(db, comment_id)
-    if not db_comment:
+    if db_comment is None:
         raise show_exception('comment', status.HTTP_404_NOT_FOUND)
     if not is_object_owner_or_staff_user(db_comment, current_user):
         raise show_exception('comment', status.HTTP_403_FORBIDDEN)

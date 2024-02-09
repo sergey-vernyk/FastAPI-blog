@@ -1,4 +1,5 @@
 import datetime
+import logging
 from base64 import urlsafe_b64encode, urlsafe_b64decode
 from datetime import timedelta
 from pathlib import Path
@@ -35,6 +36,12 @@ from dependencies import (
     get_current_user,
     CsrfVerifyDependency
 )
+from loggers.logs_config import (
+    set_endpoint_logger,
+    FORMATTER_FORMAT,
+    FORMATTER_DATA_FORMAT,
+    LOGS_DIRECTORY
+)
 from posts.models import Post, Comment
 from posts.schemas import UserPostsShow, UserCommentsShow
 
@@ -44,11 +51,18 @@ permission_exception = HTTPException(
     detail='Only staff users be able to perform this action'
 )
 
+endpoints_logger = logging.getLogger(__name__)
+endpoints_formatter = logging.Formatter(fmt=FORMATTER_FORMAT, datefmt=FORMATTER_DATA_FORMAT)
+endpoint_handler = logging.FileHandler(filename=f'{LOGS_DIRECTORY}/users_endpoints.log', encoding='utf-8')
+endpoint_handler.setFormatter(endpoints_formatter)
+endpoints_logger.addHandler(endpoint_handler)
+
 
 @router.post('/create',
              response_model=schemas.UserShow,
              status_code=status.HTTP_201_CREATED,
              summary='Create user')
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/create')
 async def create_user(request: Request,
                       user: schemas.UserCreate,
                       db: DatabaseDependency,
@@ -98,6 +112,7 @@ async def create_user(request: Request,
             status_code=status.HTTP_200_OK,
             include_in_schema=False,
             summary='Activate user\'s account after registration')
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/activate_account/{uidb64}/{token}')
 async def activate_user_account(db: DatabaseDependency, uidb64: str, token: str) -> UJSONResponse:
     """
     Activate user's account after following link in user's email after successfully registration.
@@ -123,6 +138,7 @@ async def activate_user_account(db: DatabaseDependency, uidb64: str, token: str)
              response_class=UJSONResponse,
              summary='Add user\'s image',
              dependencies=[CsrfVerifyDependency])
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/upload_user_image')
 async def create_user_photo(current_user: SecurityScopesDependency(scopes=['me:update']),
                             db: DatabaseDependency,
                             image: UploadFile,
@@ -218,29 +234,30 @@ async def read_user_by_id(request: Request,
 @router.post('/login_with_token',
              status_code=status.HTTP_200_OK,
              summary='Get access bearer token and login with the token')
-async def login_for_token(form_data: Annotated[OAuthFormWithDefaultScopes, Depends()],
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/login_with_token')
+async def login_for_token(login_data: Annotated[OAuthFormWithDefaultScopes, Depends()],
                           db: DatabaseDependency,
                           settings: ProjSettingsDependency) -> UJSONResponse:
     """
     Obtain access bearer token using data from `from_data` and login in the system with the token.
     """
-    user = crud.get_user_by_username(db, form_data.username)
+    user = crud.get_user_by_username(db, login_data.username)
     if not user:
         raise show_exception('user', status.HTTP_404_NOT_FOUND)
     # verify passed password from a frontend and hashed user's password in the db
-    verify_password_or_exception(user.hashed_password, form_data.password)
+    verify_password_or_exception(user.hashed_password, login_data.password)
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        data={'sub': user.username, 'scopes': form_data.scopes},
+        data={'sub': user.username, 'scopes': login_data.scopes},
         expires_delta=access_token_expires
     )
 
     response = UJSONResponse(
         content={
-            'detail': f'Access token was made on username `{form_data.username}`',
+            'detail': f'Access token was made on username `{login_data.username}`',
             'access_token': access_token,
             'token_type': 'bearer',
-            'scopes': form_data.scopes
+            'scopes': login_data.scopes
         },
         status_code=status.HTTP_200_OK
     )
@@ -261,24 +278,24 @@ async def read_users_me(request: Request,
     """
     Obtain current authenticated and active user, raise an exception otherwise.
     """
-    user_show = await create_user_image_url(current_user, request.base_url.scheme, request.base_url.hostname)
-    return user_show
+    return await create_user_image_url(current_user, request.base_url.scheme, request.base_url.hostname)
 
 
 @router.patch('/me/update',
               status_code=status.HTTP_200_OK,
               summary='Update own user data',
               dependencies=[CsrfVerifyDependency])
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/me/update')
 async def update_user_info(request: Request,
                            current_user: SecurityScopesDependency(scopes=['me:update']),
-                           data: schemas.UserUpdate,
+                           update_data: schemas.UserUpdate,
                            db: DatabaseDependency) -> schemas.UserShow:
     """
     Update `current_user` information from `data`.
     """
     current_user = db.merge(current_user)  # copy instance into current session `db`
     # exclude fields that were not passed for update and considered as `None`
-    data_to_update = data.model_dump(exclude_none=True)
+    data_to_update = update_data.model_dump(exclude_none=True)
     updated_user = crud.update_user(db, current_user, data_to_update)
     user_show = await create_user_image_url(updated_user, request.base_url.scheme, request.base_url.hostname)
     return user_show
@@ -289,6 +306,7 @@ async def update_user_info(request: Request,
             status_code=status.HTTP_200_OK,
             summary='Get posts that published by current user')
 @cache(expire=300)
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/me/posts')
 async def get_user_posts(db: DatabaseDependency,
                          current_user: SecurityScopesDependency(scopes=['post:read']),
                          apply_filter: Annotated[bool, Query(
@@ -345,28 +363,33 @@ async def get_users_comments(db: DatabaseDependency,
 
 
 @router.post('/reset_password',
-             summary='Reset forgotten user password and set new password',
-             dependencies=[CsrfVerifyDependency])
+             summary='Reset forgotten user password and set new password')
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/reset_password')
 async def reset_password(request: Request,
-                         form: schemas.ResetUserPassword,
+                         reset_pswd_form: schemas.ResetUserPassword,
                          db: DatabaseDependency,
                          settings: ProjSettingsDependency) -> UJSONResponse:
     """
     Reset user password, which user could forget or for update old password.
     User must enter ONLY its (email or username) and password for perform this action.
     """
-    if form.username:
-        db_user = crud.get_user_by_username(db, form.username)
-    elif form.email:
-        db_user = crud.get_user_by_email(db, form.email)
+    if reset_pswd_form.username:
+        db_user = crud.get_user_by_username(db, reset_pswd_form.username)
+    elif reset_pswd_form.email:
+        db_user = crud.get_user_by_email(db, reset_pswd_form.email)
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail='You must provide either username or email for reset password'
         )
+    if db_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f'Username `{reset_pswd_form.username}` does not exists'
+        )
     # encrypt and encode new password and encode username
     # format is `hashed_password:username`
-    uid_pass = (f'{urlsafe_b64encode(get_password_hash(form.password).encode("utf-8")).decode("utf-8")}:'
+    uid_pass = (f'{urlsafe_b64encode(get_password_hash(reset_pswd_form.password).encode("utf-8")).decode("utf-8")}:'
                 f'{urlsafe_b64encode(db_user.username.encode("utf-8")).decode("utf-8")}')
     email_context = {
         'protocol': request.base_url.scheme,
@@ -397,6 +420,7 @@ async def reset_password(request: Request,
             include_in_schema=False,
             status_code=status.HTTP_200_OK,
             summary='Confirm password reset')
+@set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/confirm_reset_password/{uid_pass}/{token}')
 async def confirm_reset_password(db: DatabaseDependency, uid_pass: str, token: str) -> UJSONResponse:
     """
     Confirm reset password by verifying received `uidb64` with encoded username and disposable `token`.

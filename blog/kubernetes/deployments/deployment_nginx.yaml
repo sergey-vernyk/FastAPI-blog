@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: nginx-deployment
-        image: sergeyvernyk/nginx_blog:1.2
+        image: sergeyvernyk/nginx_blog:1.3
         resources:
           limits:
             memory: "128Mi"
@@ -21,15 +21,44 @@ spec:
         ports:
         - containerPort: 80
         - containerPort: 443
+        volumeMounts:
+        - name: blog-api-ssl-certs
+          mountPath: /vol/certs
         env:
         - name: DOMAIN
-          value: 192.168.59.100
+          valueFrom:
+            configMapKeyRef:
+              name: nginx-config
+              key: domain
+        - name: API_VERSION
+          valueFrom:
+            secretKeyRef:
+              name: fastapi-secrets
+              key: API_VERSION
         - name: PORT
-          value: "80"
+          valueFrom:
+            configMapKeyRef: 
+              name: nginx-config
+              key: port
         - name: BACKEND_URL
-          value: blog-api-service.default.svc.cluster.local:8080
+          valueFrom:
+            configMapKeyRef:
+              name: nginx-config
+              key: backend_url
+        - name: CERT_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: nginx-config
+              key: cert_name
+        - name: CERT_KEY_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: nginx-config
+              key: cert_key_name
       volumes:
-      - name: blog-api-volume-static
+      - name: blog-api-ssl-certs
+        persistentVolumeClaim:
+          claimName: blog-api-ssl-certs
   replicas: 2  
 ---
 apiVersion: v1

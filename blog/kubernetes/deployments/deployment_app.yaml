@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: fastapi-blog-deployment
-        image: sergeyvernyk/blog_fastapi:0.1.7
+        image: sergeyvernyk/blog_fastapi:0.1.10
         resources:
           limits:
             memory: "256Mi"
@@ -28,6 +28,10 @@ spec:
           mountPath: /vol/static/img/users_images
         - name: blog-api-volume-posts-images
           mountPath: /vol/static/img/posts_images
+        - name: blog-api-volume-logs
+          mountPath: /vol/logs
+        - name: blog-api-ssl-certs
+          mountPath: /vol/certs
       volumes:
       - name: blog-api-volume-users-images
         persistentVolumeClaim:
@@ -35,6 +39,12 @@ spec:
       - name: blog-api-volume-posts-images
         persistentVolumeClaim:
           claimName: blog-api-volume-posts-images
+      - name: blog-api-volume-logs
+        persistentVolumeClaim:
+          claimName: blog-api-volume-logs
+      - name: blog-api-ssl-certs
+        persistentVolumeClaim:
+          claimName: blog-api-ssl-certs
   replicas: 3
 ---
 apiVersion: v1

@@ -12,10 +12,10 @@ from accounts.models import User
 from accounts.schemas import UserShow
 from accounts.utils import USER_IMAGES_DIR_PATH, token_generator
 from common.security import create_access_token, get_password_hash, get_token_data
+from config import get_settings
 from posts.models import Comment, Post
 from posts.schemas import UserCommentsShow, UserPostsShow
 from .conftest import USER_DATA
-from ..config import get_settings
 
 TEST_CSRF_TOKEN = 'bvhahncoioerucmigcniquw2cewqc'
 settings = get_settings()
@@ -502,23 +502,6 @@ def test_reset_password_if_was_not_passed_required_data(client) -> None:
     assert response.json() == {'detail': 'You must provide either username or email for reset password'}
 
 
-def test_reset_password_if_csrf_tokens_mismatch(client) -> None:
-    """
-    Test reset user's account password if csrf tokens in request header and client cookies are mismatch.
-    """
-    data_to_reset = {'password': 'new_super_password'}
-    client.cookies.set(name='csrftoken', value='wrong_csrf_token')
-
-    response = client.post(
-        url='/users/reset_password',
-        json=data_to_reset,
-        headers={'X-CSRFToken': TEST_CSRF_TOKEN},
-    )
-
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json() == {'detail': 'CSRF token missing or incorrect'}
-
-
 def test_confirm_reset_password_success(client, user_for_token: User) -> None:
     """
     Test check if user's account password will really change
@@ -694,7 +677,7 @@ def test_get_user_posts_without_particular_scope(client, create_multiple_users: 
 
 
 def test_get_users_comment_with_particular_scope(client,
-                                                 create_comments_for_user: list[Comment],
+                                                 create_comments_to_posts_for_user: list[Comment],
                                                  get_token: str) -> None:
     """
     Test get all posts of current authenticated user is user has appropriate access scope.
@@ -707,10 +690,12 @@ def test_get_users_comment_with_particular_scope(client,
 
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
-    assert len(response_data) == 2, 'Must 2 comments'
+    assert len(response_data) == 3, 'Must be 3 comments'
     # check whether response comment data equal data of already created comments
-    assert UserCommentsShow(**response_data[0]) == UserCommentsShow(**jsonable_encoder(create_comments_for_user[0]))
-    assert UserCommentsShow(**response_data[1]) == UserCommentsShow(**jsonable_encoder(create_comments_for_user[1]))
+    assert UserCommentsShow(**response_data[0]) == UserCommentsShow(
+        **jsonable_encoder(create_comments_to_posts_for_user[0]))
+    assert UserCommentsShow(**response_data[1]) == UserCommentsShow(
+        **jsonable_encoder(create_comments_to_posts_for_user[1]))
 
 
 def test_get_users_comment_without_particular_scope(client, create_multiple_users: list[User]) -> None:

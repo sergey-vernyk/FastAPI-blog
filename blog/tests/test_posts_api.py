@@ -209,7 +209,36 @@ def test_read_posts(client, create_posts_for_user: list[Post]) -> None:
     """
     post_for_receiving1 = create_posts_for_user[0]
     post_for_receiving2 = create_posts_for_user[1]
-    response = client.get(url='posts/read_all/posts')
+    response = client.get(url='posts/read_all/posts', params={'sort_by': 'created_desc'})
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    # sort response data because we must be sure that data will always be in the same ordering
+    response_data_sorted = sorted(response_data, key=lambda i: i['id'])
+    assert len(response_data_sorted) == 2
+    post1_data = jsonable_encoder(post_for_receiving1)
+    post2_data = jsonable_encoder(post_for_receiving2)
+    post1_data.update(
+        tags=post_for_receiving1.tags.split(','),
+        owner=UserShowBriefly(id=post_for_receiving1.owner_id, username=post_for_receiving1.owner.username),
+        category=CategoryCreate(name=post_for_receiving1.category.name)
+    )
+    post2_data.update(
+        tags=post_for_receiving2.tags.split(','),
+        owner=UserShowBriefly(id=post_for_receiving2.owner_id, username=post_for_receiving2.owner.username),
+        category=CategoryCreate(name=post_for_receiving2.category.name)
+    )
+    assert PostShow(**response_data_sorted[0]) == PostShow(**post1_data)
+    assert PostShow(**response_data_sorted[1]) == PostShow(**post2_data)
+
+
+def test_read_posts_sort_by_rating(client, create_posts_for_user: list[Post]) -> None:
+    """
+    Test read all posts in the database.
+    """
+    post_for_receiving1 = create_posts_for_user[0]
+    post_for_receiving2 = create_posts_for_user[1]
+    response = client.get(url='posts/read_all/posts', params={'sort_by': 'rating_desc'})
 
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
@@ -226,8 +255,8 @@ def test_read_posts(client, create_posts_for_user: list[Post]) -> None:
         owner=UserShowBriefly(id=post_for_receiving2.owner_id, username=post_for_receiving2.owner.username),
         category=CategoryCreate(name=post_for_receiving2.category.name)
     )
-    assert PostShow(**response_data[0]) == PostShow(**post1_data)
-    assert PostShow(**response_data[1]) == PostShow(**post2_data)
+    assert PostShow(**response_data[0]) == PostShow(**post2_data)
+    assert PostShow(**response_data[1]) == PostShow(**post1_data)
 
 
 def test_read_post_categories(client, create_post_category) -> None:
@@ -514,12 +543,12 @@ def test_create_comment_if_csrf_tokens_mismatch(client,
 
 def test_set_comment_like_or_dislike_with_particular_scope(client,
                                                            get_token: str,
-                                                           create_comments_for_user: list[Comment]) -> None:
+                                                           create_comments_to_posts_for_user: list[Comment]) -> None:
     """
     Test set like or dislike for comment with comment_id.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    comment_for_set = create_comments_for_user[1]
+    comment_for_set = create_comments_to_posts_for_user[1]
     # set like
     response = client.post(
         url=f'/posts/comment/like/{comment_for_set.id}',
@@ -639,11 +668,11 @@ def test_set_comment_like_or_dislike_if_post_does_not_exist(client, get_token: s
 
 def test_set_comment_like_or_dislike_if_passed_wrong_command(client,
                                                              get_token: str,
-                                                             create_comments_for_user: list[Comment]) -> None:
+                                                             create_comments_to_posts_for_user: list[Comment]) -> None:
     """
     Test set like or dislike if passed neither like nor dislike as action.
     """
-    comment_for_set = create_comments_for_user[1]
+    comment_for_set = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.post(
@@ -661,13 +690,13 @@ def test_set_comment_like_or_dislike_if_passed_wrong_command(client,
 
 def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client,
                                                              get_token: str,
-                                                             create_comments_for_user: list[Comment]) -> None:
+                                                             create_comments_to_posts_for_user: list[Comment]) -> None:
     """
     Test set like or dislike for comment with comment_id,
     if csrf tokens in request header and client cookies are mismatch.
     """
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
-    comment_for_set = create_comments_for_user[1]
+    comment_for_set = create_comments_to_posts_for_user[1]
     # set like
     response = client.post(
         url=f'/posts/comment/like/{comment_for_set.id}',
@@ -681,13 +710,15 @@ def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_update_comment_with_particular_scope(client, create_comments_for_user: list[Comment], get_token: str) -> None:
+def test_update_comment_with_particular_scope(client,
+                                              create_comments_to_posts_for_user: list[Comment],
+                                              get_token: str) -> None:
     """
     Test update comment with passed comment_id if user has appropriate scope,
     and user is owner of that comment.
     """
     # this comment was posted by user from `get_token` token data
-    comment_for_update = create_comments_for_user[1]
+    comment_for_update = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.put(
@@ -703,7 +734,7 @@ def test_update_comment_with_particular_scope(client, create_comments_for_user: 
     assert CommentShow(**jsonable_encoder(comment_for_update)) == CommentShow(**response.json())
 
 
-def test_update_comment_if_user_is_staff(client, create_comments_for_user: list[Comment], get_token: str, db):
+def test_update_comment_if_user_is_staff(client, create_comments_to_posts_for_user: list[Comment], get_token: str, db):
     """
     Test update comment with passed comment_id if user has appropriate scope,
     and user is a staff user.
@@ -712,7 +743,7 @@ def test_update_comment_if_user_is_staff(client, create_comments_for_user: list[
     username_from_token = get_token_data(get_token).username
     db.query(User).filter(User.username == username_from_token).update({'role': 'moderator'})
     # this comment was posted by user from `get_token` token data
-    comment_for_update = create_comments_for_user[1]
+    comment_for_update = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.put(
@@ -729,7 +760,7 @@ def test_update_comment_if_user_is_staff(client, create_comments_for_user: list[
 
 
 def test_update_comment_if_user_is_not_staff_or_owner(client,
-                                                      create_comments_for_user: list[Comment],
+                                                      create_comments_to_posts_for_user: list[Comment],
                                                       create_multiple_users: list[User],
                                                       get_token: str,
                                                       db) -> None:
@@ -737,10 +768,10 @@ def test_update_comment_if_user_is_not_staff_or_owner(client,
     Test update comment with passed comment_id if user has appropriate scope,
     but user not a staff.
     """
-    comment_for_update = create_comments_for_user[1]
+    comment_for_update = create_comments_to_posts_for_user[1]
     # change owner for comment
     db.query(Comment).update({'owner_id': create_multiple_users[1].id})
-    create_comments_for_user[1].owner = create_multiple_users[1]
+    create_comments_to_posts_for_user[1].owner = create_multiple_users[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.put(
@@ -770,7 +801,7 @@ def test_update_comment_if_user_is_not_staff_or_owner(client,
 
 
 def test_update_comment_without_particular_scope(client,
-                                                 create_comments_for_user: list[Comment],
+                                                 create_comments_to_posts_for_user: list[Comment],
                                                  create_multiple_users: list[User]) -> None:
     """
     Test update comment with passed comment_id,
@@ -779,7 +810,7 @@ def test_update_comment_without_particular_scope(client,
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
     # this comment was posted by user from `get_token` token data
-    comment_for_update = create_comments_for_user[1]
+    comment_for_update = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.put(
@@ -815,13 +846,13 @@ def test_update_comment_if_passed_wrong_comment_id(client, get_token: str) -> No
 
 
 def test_update_comment_if_csrf_tokens_mismatch(client,
-                                                create_comments_for_user: list[Comment],
+                                                create_comments_to_posts_for_user: list[Comment],
                                                 get_token: str) -> None:
     """
     Test update comment with passed comment_id if csrf tokens in request header and client cookies are mismatch.
     """
     # this comment was posted by user from `get_token` token data
-    comment_for_update = create_comments_for_user[1]
+    comment_for_update = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.put(
@@ -839,12 +870,12 @@ def test_update_comment_if_csrf_tokens_mismatch(client,
 
 def test_delete_comment_with_particular_scope(client,
                                               get_token: str,
-                                              create_comments_for_user: list[Comment],
+                                              create_comments_to_posts_for_user: list[Comment],
                                               db) -> None:
     """
     Test delete comment by its id if user has appropriate access scope for this action.
     """
-    comment_for_delete = create_comments_for_user[0]
+    comment_for_delete = create_comments_to_posts_for_user[0]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.delete(
@@ -879,16 +910,16 @@ def test_delete_comment_if_passed_wrong_comment_id(client, get_token: str) -> No
 
 def test_delete_comment_if_user_not_owner_or_staff(client,
                                                    get_token: str,
-                                                   create_comments_for_user: list[Comment],
+                                                   create_comments_to_posts_for_user: list[Comment],
                                                    create_multiple_users: list[User],
                                                    db) -> None:
     """
     Test delete comment by its id if user not staff or comment's owner.
     """
-    comment_for_delete = create_comments_for_user[1]
+    comment_for_delete = create_comments_to_posts_for_user[1]
     # change owner for comment for delete
     db.query(Comment).filter(Comment.id == comment_for_delete.id).update({'owner_id': create_multiple_users[1].id})
-    create_comments_for_user[1].owner = create_multiple_users[1]
+    create_comments_to_posts_for_user[1].owner = create_multiple_users[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.delete(
@@ -904,7 +935,7 @@ def test_delete_comment_if_user_not_owner_or_staff(client,
 
 
 def test_delete_comment_without_particular_scope(client,
-                                                 create_comments_for_user: list[Comment],
+                                                 create_comments_to_posts_for_user: list[Comment],
                                                  create_multiple_users: list[User]) -> None:
     """
     Test delete comment by its id if user has not appropriate scope to do this action.
@@ -912,7 +943,7 @@ def test_delete_comment_without_particular_scope(client,
     # token without access scope for delete comment
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
-    comment_for_delete = create_comments_for_user[1]
+    comment_for_delete = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
     response = client.delete(
@@ -928,7 +959,7 @@ def test_delete_comment_without_particular_scope(client,
 
 
 def test_delete_comment_if_csrf_tokens_mismatch(client,
-                                                create_comments_for_user: list[Comment],
+                                                create_comments_to_posts_for_user: list[Comment],
                                                 create_multiple_users: list[User]) -> None:
     """
     Test delete comment by its id if csrf tokens in request header and client cookies are mismatch.
@@ -936,7 +967,7 @@ def test_delete_comment_if_csrf_tokens_mismatch(client,
     # token without access scope for delete comment
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
-    comment_for_delete = create_comments_for_user[1]
+    comment_for_delete = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
 
     response = client.delete(
