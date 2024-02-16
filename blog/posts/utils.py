@@ -30,7 +30,7 @@ def create_post_show_instance_with_extra_attributes(post_row: RowMapping) -> Pos
         'count_comments': post_row['count_comments'],
         'category': category,
         'owner': owner,
-        'tags': post.tags.split(',')
+        'tags': post.tags
     })
     return PostShow(**data_for_post_show)
 

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, EmailStr
 
 
 class UserCreate(BaseModel):
@@ -12,7 +12,7 @@ class UserCreate(BaseModel):
     first_name: str = Field(max_length=50)
     last_name: Optional[str] = Field(max_length=50, default=None)
     gender: Optional[str] = Field(max_length=6, default=None, examples=['male/female'])
-    email: str
+    email: EmailStr
     password: str = Field(min_length=10)
     date_of_birth: Optional[date] = None
     about: Optional[str] = Field(default=None, max_length=255)
@@ -57,7 +57,7 @@ class UserUpdate(BaseModel):
     last_name: Optional[str] = Field(max_length=50, default=None)
     image: Optional[str] = None
     gender: Optional[str] = Field(max_length=6, default=None)
-    email: Optional[str] = Field(examples=['example@example.com'], default=None)
+    email: Optional[EmailStr] = Field(examples=['example@example.com'], default=None)
     hashed_password: Optional[str] = Field(min_length=10, default=None)
     date_of_birth: Optional[date] = Field(examples=['yyyy-mm-dd'], default=None)
     is_active: Optional[bool] = Field(default=None)
@@ -77,7 +77,7 @@ class ResetUserPassword(BaseModel):
     """
     Info for reset forgotten user's password.
     """
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
     username: Optional[str] = None
     password: str = Field(min_length=10)
 

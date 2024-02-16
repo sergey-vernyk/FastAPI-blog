@@ -1,23 +1,13 @@
-from typing import Type, Union
-
-from fastapi import HTTPException
 from sqlalchemy import func, select, desc
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
 from accounts.models import User
-from . import schemas
+from common.tasks import invalidate_endpoint_cache
 from .models import Category, Post, Comment
 
 
-def get_post_by_title(db: Session, post_title: str) -> Union[Post, None]:
-    """
-    Get post by its `post_title`.
-    """
-    return db.query(Post).filter(Post.title == post_title).first()
-
-
-def get_post_by_id_query(post_id: int) -> Select:
+async def get_post_by_id_query(post_id: int) -> Select:
     """
     Get post by its `post_id`.
     """
@@ -25,41 +15,10 @@ def get_post_by_id_query(post_id: int) -> Select:
         Category).outerjoin(Comment).filter(Post.id == post_id).group_by(Post.id)
 
 
-def get_category_by_name(db: Session, name: str) -> Union[Category, None]:
-    """
-    Get category by its name.
-    """
-    return db.query(Category).filter(Category.name == name).first()
-
-
-def create_post(db: Session, post: schemas.PostCreate, category_id: int, user: User) -> Union[HTTPException, Post]:
-    """
-    Create post by passed parameters.
-    """
-    post = Post(title=post.title,
-                body=post.body,
-                tags=','.join(post.tags),
-                category_id=category_id,
-                owner_id=user.id)
-    db.add(post)
-    db.commit()
-    db.refresh(post)
-    return post
-
-
-def create_category(db: Session,
-                    category: schemas.CategoryCreate) -> Category:
-    """
-    Create post's category by passed parameters.
-    """
-    category = Category(name=category.name)
-    db.add(category)
-    db.commit()
-    db.refresh(category)
-    return category
-
-
-def get_posts_query(category: str, skip: int = 0, limit: int = 100, sort_by: str = 'created_desc') -> Select:
+async def get_posts_query(category: str,
+                          skip: int = 0,
+                          limit: int = 100,
+                          sort_by: str = 'created_desc') -> Select:
     """
     Return query for get all posts in the `db` with offset `skip` and `limit`,
     and sort results by criteria from `sort_by`.
@@ -77,57 +36,19 @@ def get_posts_query(category: str, skip: int = 0, limit: int = 100, sort_by: str
         Post.id).order_by(sort_conditions[sort_by]).offset(skip).limit(limit)
 
 
-def get_post_categories(db: Session, skip: int = 0, limit: int = 100) -> list[Type[Category]]:
-    """
-    Return all categories in the `db` with offset `skip` and `limit`.
-    """
-    return db.query(Category).offset(skip).limit(limit).all()
-
-
-def update_post_query(db: Session, post: Post, data_to_update: dict) -> Select:
+async def update_post_query(db: Session, post: Post, data_to_update: dict) -> Select:
     """
     Update post with passed parameters and return query with the post along extra data.
     """
     db.query(Post).filter(Post.id == post.id).update(data_to_update)
     db.commit()
+    # invalidate cache after post's data has been updated
+    invalidate_endpoint_cache.delay(namespace=Post.__tablename__, request_method='get')
     return select(Post, func.count(Comment.id).label('count_comments')).join(
         Category).outerjoin(Comment).filter(Post.id == post.id).group_by(Post.id)
 
 
-def delete_post(db: Session, post: Post) -> None:
-    """
-    Remove `post` from db.
-    """
-    db.delete(post)
-    db.commit()
-
-
-def create_comment(db: Session,
-                   comment: schemas.CommentCreateOrUpdate,
-                   user: schemas.UserShowBriefly,
-                   post_id: int) -> Comment:
-    """
-    Create comment for `post_id` behalf `user`.
-    """
-    comment = Comment(
-        body=comment.body,
-        post_id=post_id,
-        owner_id=user.id
-    )
-    db.add(comment)
-    db.commit()
-    db.refresh(comment)
-    return comment
-
-
-def get_comment_by_id(db: Session, comment_id: int) -> Union[Comment, None]:
-    """
-    Obtain comment with `comment_id` from db.
-    """
-    return db.get(Comment, comment_id)
-
-
-def set_like_or_dislike_for_comment(db: Session, user: User, comment: Comment, action: str) -> Comment:
+async def set_like_or_dislike_for_comment(db: Session, user: User, comment: Comment, action: str) -> Comment:
     """
     Set comment with `comment_id` as liked/disliked by `user`.
     """
@@ -156,22 +77,6 @@ def set_like_or_dislike_for_comment(db: Session, user: User, comment: Comment, a
     db.add(comment)
     db.commit()
     db.refresh(comment)
+    # invalidate cache after comment's data has been updated
+    invalidate_endpoint_cache.delay(namespace=Comment.__tablename__, request_method='get')
     return comment
-
-
-def update_comment(db: Session, comment: Comment, data_to_update: dict) -> Comment:
-    """
-    Update comment's body.
-    """
-    db.query(Comment).filter(Comment.id == comment.id).update(data_to_update)
-    db.commit()
-    db.refresh(comment)
-    return comment
-
-
-def delete_comment(db: Session, comment: Comment) -> None:
-    """
-    Remove `comment` from database.
-    """
-    db.delete(comment)
-    db.commit()

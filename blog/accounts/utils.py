@@ -3,28 +3,20 @@ import hmac
 import os
 from base64 import urlsafe_b64decode
 from datetime import datetime
-from pathlib import Path
 from secrets import compare_digest
 from typing import Type, Union
 
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
-from accounts import schemas, crud
+from accounts import schemas
 from accounts.models import User
+from common.crud_operations import CrudManager
 from common.utils import base36decode, base36encode
 from config import get_settings
+from settings.env_dirs import USER_IMAGES_DIR_PATH
 
 settings = get_settings()
-
-# define parent directory path for the directory `static` (for possibility using relative path)
-PARENT_DIR_PATH = str(Path(__file__).resolve().parent.parent)
-
-USER_IMAGES_DIR_PATH = ''
-if settings.dev_or_prod == 'dev':
-    USER_IMAGES_DIR_PATH = f'{PARENT_DIR_PATH}/static/img/users_images/'
-elif settings.dev_or_prod == 'prod':
-    USER_IMAGES_DIR_PATH = '/vol/static/img/users_images/'
 
 
 async def create_user_image_url(current_user: Union[User, Type[User]], scheme: str, domain: str) -> schemas.UserShow:
@@ -54,7 +46,7 @@ def create_or_update_user_folder(current_user: User) -> None:
         os.system(f'rm {USER_IMAGES_DIR_PATH}{current_user.username}/*')
 
 
-def verify_uid_and_token_from_url(db: Session, uidb64: str, token: str) -> Union[User, None]:
+async def verify_uid_and_token_from_url(db: Session, uidb64: str, token: str) -> Union[User, None]:
     """
     Verify `uidb64` string and token which obtained from url.
     Uidb64 is encoded string with username, token also is string generated from token generator,
@@ -65,7 +57,7 @@ def verify_uid_and_token_from_url(db: Session, uidb64: str, token: str) -> Union
     try:
         # decoding user id from uidb64 and getting user from db
         username = urlsafe_b64decode(uidb64).decode('utf-8')
-        user = crud.get_user_by_username(db, username)
+        user = await CrudManager(db, User).retrieve(User.username == username)
     except (TypeError, ValueError):
         user = None
     # if user is exists and token term isn't end (token is valid)
@@ -76,7 +68,7 @@ def verify_uid_and_token_from_url(db: Session, uidb64: str, token: str) -> Union
 
 class LimitedLifeTokenGenerator:
     """
-    Class used to generate and check tokens for the password
+    Class is used for generate and check tokens for the password
     reset or activate account mechanism.
     """
 
@@ -91,7 +83,7 @@ class LimitedLifeTokenGenerator:
         self.algorithm = self.algorithm or 'sha256'
 
     @property
-    def secret(self) -> None | str:
+    def secret(self) -> str:
         return self._secret
 
     def make_token(self, user) -> str:

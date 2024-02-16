@@ -12,13 +12,11 @@ from accounts.models import User
 from accounts.schemas import UserShow
 from accounts.utils import USER_IMAGES_DIR_PATH, token_generator
 from common.security import create_access_token, get_password_hash, get_token_data
-from config import get_settings
 from posts.models import Comment, Post
 from posts.schemas import UserCommentsShow, UserPostsShow
 from .conftest import USER_DATA
 
 TEST_CSRF_TOKEN = 'bvhahncoioerucmigcniquw2cewqc'
-settings = get_settings()
 
 
 def test_create_user_success(client, mocker) -> None:
@@ -143,7 +141,7 @@ def test_read_user_by_id_without_particular_scope(user_for_token: User,
                                                   create_multiple_users: list[User],
                                                   client) -> None:
     """
-    Test read user by its id if has not appropriate access scope.
+    Test read user by its id if it has not appropriate access scope.
     """
     # token without needed scope
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
@@ -540,7 +538,7 @@ def test_confirm_reset_password_fail(client, user_for_token: User) -> None:
         uid_pass = (f'{urlsafe_b64encode(get_password_hash("new_password").encode("utf-8")).decode("utf-8")}:'
                     f'{urlsafe_b64encode(user_for_token.username.encode("utf-8")).decode("utf-8")}')
         token = token_generator.make_token(user_for_token)
-        sleep(1)  # do some delay in order to pass test (in debug mode this delay do not necessary)
+        sleep(1)  # do some delay in order to pass test (in debug mode this delay is no necessary)
         response = client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
 
     assert response.status_code == status.HTTP_200_OK
@@ -626,7 +624,7 @@ def test_get_user_posts_with_filter(client, get_token: str, create_posts_for_use
         headers={'Authorization': f'Bearer {get_token}'},
         params={
             'apply_filter': True,
-            'tags': 'tag3',
+            'tags': ['tag3'],
             'is_publish': True,
             'rating': 0,  # 0 or above
             'category': ''
@@ -646,7 +644,7 @@ def test_get_user_posts_with_filter(client, get_token: str, create_posts_for_use
         headers={'Authorization': f'Bearer {get_token}'},
         params={
             'apply_filter': True,
-            'tags': 'tag2',
+            'tags': ['tag2'],
             'is_publish': True,
             'rating': 0,  # 0 or above
             'category': ''

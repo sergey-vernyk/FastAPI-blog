@@ -1,7 +1,6 @@
 import logging
 from functools import wraps
 from inspect import iscoroutinefunction
-from pathlib import Path
 from typing import Any, Callable, Literal
 
 from fastapi.exceptions import HTTPException
@@ -14,15 +13,6 @@ FORMATTER_FORMAT = (
     '%(asctime)s  Module: [%(name)s]  Level: [%(levelname)s]  Message: [%(message)s] Extra params: [%(extra)s]'
 )
 FORMATTER_DATA_FORMAT = '%d/%m/%Y %H:%M:%S'
-
-# define parent directory path for the directory `static` (for possibility using relative path)
-PARENT_DIR_PATH = str(Path(__file__).resolve().parent.parent)
-
-LOGS_DIRECTORY = ''
-if settings.dev_or_prod == 'dev':
-    LOGS_DIRECTORY = f'{PARENT_DIR_PATH}/loggers'
-elif settings.dev_or_prod == 'prod':
-    LOGS_DIRECTORY = '/vol/logs'
 
 
 def set_endpoint_logger(level: Literal['debug', 'info', 'warning', 'error', 'critical'],

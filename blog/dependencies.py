@@ -7,8 +7,9 @@ from jose import JWTError, jwt
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from accounts import models, crud
+from accounts import models
 from accounts.schemas import TokenData
+from common.crud_operations import CrudManager
 from config import Settings, get_settings
 from db_connection import SessionLocal
 
@@ -77,7 +78,7 @@ async def get_current_user(security_scopes: SecurityScopes,
         token_data = TokenData(username=username, scopes=token_scopes)
     except (JWTError, ValidationError):
         raise credentials_exception
-    user = crud.get_user_by_username(db=db, username=token_data.username)
+    user = await CrudManager(db, models.User).retrieve(models.User.username == token_data.username)
     if user is None:
         raise credentials_exception
     if not user.is_active:

@@ -4,17 +4,15 @@ from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from pathlib import Path
 from typing import Sequence, Union, Literal, AnyStr
 
 from jinja2 import FileSystemLoader, Environment
 
 from config import get_settings
+from settings.env_dirs import TEMPLATES_DIR_PATH
 
 settings = get_settings()
-# define parent directory path for the directory `templates` (for possibility using relative path)
-PARENT_DIR_PATH = str(Path(__file__).resolve().parent.parent)
-environment = Environment(loader=FileSystemLoader(f'{PARENT_DIR_PATH}/templates/'))  # define templates location
+environment = Environment(loader=FileSystemLoader(TEMPLATES_DIR_PATH))  # define templates location
 
 
 class EmailWithAttachments:
@@ -51,8 +49,8 @@ class EmailWithAttachments:
         return self.mime_types[doc_type](content)
 
     def _read_content(self,
-                      source: str | bytes,
-                      type_media: bool = False) -> AnyStr | FileNotFoundError | TypeError:
+                      source: AnyStr,
+                      type_media: bool = False) -> str | FileNotFoundError | TypeError:
         """
         Read content from `source` taking in account its type.
         - `type_media` flag to recognize file type from passed `source` - media or text (False -> text),
@@ -75,10 +73,10 @@ class EmailWithAttachments:
         )
 
     def _compose_email_attachments(self,
-                                   plain_text: str | bytes = None,
-                                   html_name: str | bytes = None,
-                                   file_name: str = None,
-                                   image_name: str = None) -> dict:
+                                   plain_text: AnyStr | None = None,
+                                   html_name: AnyStr | None = None,
+                                   file_name: str | None = None,
+                                   image_name: str | None = None) -> dict:
         """
         Returns dict with attachment data for email.
         Data in dict are in particular MIME type which depends on their content.
@@ -136,19 +134,19 @@ class EmailWithAttachments:
     def send_mail(self,
                   send_to: Sequence[str] | str,
                   subject: str,
-                  bcc: Sequence[str] | str = None,
+                  bcc: Sequence[str] | str | None = None,
                   content: dict[
-                      Literal['plain_text'], str | bytes,
-                      Literal['html_name'], str | bytes,
-                      Literal['file_name'], str,
-                      Literal['image_name'], str
-                  ] = None) -> smtplib.SMTPResponseException | Literal['Successfully']:
+                               Literal['plain_text'], str | bytes,
+                               Literal['html_name'], str | bytes,
+                               Literal['file_name'], str,
+                               Literal['image_name'], str
+                           ] | None = None) -> smtplib.SMTPResponseException | Literal['Successfully']:
         """
         Send email over SSL.
         - `send_to` - email receivers,
         - `subject` - email subject,
         - `bcc` - blind carbon copy receivers,
-        - content - dict with content for sending in format {key: value}:
+        - `content` - dict with content for sending in format {key: value}:
 
             {'plain_text': text or bytes,
              'html_name': text html or bytes,

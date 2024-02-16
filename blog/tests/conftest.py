@@ -16,7 +16,7 @@ from dependencies import get_db
 from dependencies import oauth2_scheme
 from main import app
 from posts.models import Post, Category, Comment
-from routers.posts_router import LOGS_DIRECTORY
+from settings.env_dirs import LOGS_DIRECTORY
 
 settings = get_settings()
 
@@ -163,7 +163,7 @@ def create_posts_for_user(user_for_token: User, db: Session):
     post1 = Post(
         title='post_title1',
         body='post_body1',
-        tags='tag1,tag2',
+        tags=['tag1', 'tag2'],
         rating=3,
         is_publish=True,
         category_id=post_category.id,
@@ -172,7 +172,7 @@ def create_posts_for_user(user_for_token: User, db: Session):
     post2 = Post(
         title='post_title2',
         body='post_body2',
-        tags='tag5,tag6,tag3,tag2',
+        tags=['tag5', 'tag6', 'tag3', 'tag2'],
         rating=4,
         is_publish=True,
         category_id=post_category.id,

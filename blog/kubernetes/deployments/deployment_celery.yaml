@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: celery-worker-deployment
-        image: sergeyvernyk/blog_fastapi:0.1.10
+        image: sergeyvernyk/blog_fastapi:0.1.11
         command: ["/bin/sh"]
         args: ["-c", "/scripts/start-worker-flower.sh"]
         resources:

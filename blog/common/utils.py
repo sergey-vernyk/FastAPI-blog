@@ -1,4 +1,6 @@
-from fastapi import status, HTTPException
+from typing import Callable
+
+from fastapi import status, HTTPException, Request
 from starlette.responses import Response
 
 
@@ -61,3 +63,18 @@ def base36decode(b36_string: str) -> int:
     if len(b36_string) > 13:
         raise ValueError('Base36 input too large')
     return int(b36_string, 36)
+
+
+def endpoint_cache_key_builder(func: Callable, namespace: str = '', *,
+                               request: Request = None, response: Response = None,
+                               **kwargs) -> str:
+    """
+    Returns the key by which cache backend preserves data from response in the cache.
+    All params can be contained in the key.
+    """
+    return ':'.join([
+        namespace,
+        request.method.lower(),
+        request.url.path,
+        repr(','.join(f'({k},{v})' for k, v in sorted(request.query_params.items()) if request.query_params))
+    ])

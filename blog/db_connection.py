@@ -1,19 +1,16 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-from config import Settings
+from config import get_settings
 
-settings = Settings()
+settings = get_settings()
 
-# database URL for SQLAlchemy
 SQLALCHEMY_DATABASE_URL = settings.database_url
-# SQLAlchemy `engine`
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, echo=True
 )
-# this instance will be the actual database session
+# actual database session
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# we will inherit from this class to create each of the database models or classes
+# inherit from this class to create each of the database models or classes
 Base = declarative_base()

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # token generator data
     secret_key_token_generator: str
     token_expired_timeout: int
+    # redis cache
+    redis_cache_url_prod: str | None
+    redis_cache_url_dev: str | None
     # redis for celery
     celery_broker_url_dev: str | None
     celery_broker_url_prod: str | None

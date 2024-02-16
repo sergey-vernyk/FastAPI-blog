@@ -43,7 +43,7 @@ def test_create_post_with_authorization(client, create_post_category, get_token:
     created_post = db.get(Post, response_data['id'])
     created_post_dict = jsonable_encoder(created_post)
     created_post_dict.update(
-        tags=created_post.tags.split(','),
+        tags=created_post.tags,
         owner=UserShowBriefly(id=created_post.owner_id, username=created_post.owner.username),
         category=CategoryCreate(name=created_post.category.name)
     )
@@ -196,7 +196,7 @@ def test_read_post(client, create_posts_for_user: list[Post]) -> None:
     response_data = response.json()
     post_data_dict = jsonable_encoder(post_for_receiving)
     post_data_dict.update(
-        tags=post_for_receiving.tags.split(','),
+        tags=post_for_receiving.tags,
         owner=UserShowBriefly(id=post_for_receiving.owner_id, username=post_for_receiving.owner.username),
         category=CategoryCreate(name=post_for_receiving.category.name)
     )
@@ -219,12 +219,12 @@ def test_read_posts(client, create_posts_for_user: list[Post]) -> None:
     post1_data = jsonable_encoder(post_for_receiving1)
     post2_data = jsonable_encoder(post_for_receiving2)
     post1_data.update(
-        tags=post_for_receiving1.tags.split(','),
+        tags=post_for_receiving1.tags,
         owner=UserShowBriefly(id=post_for_receiving1.owner_id, username=post_for_receiving1.owner.username),
         category=CategoryCreate(name=post_for_receiving1.category.name)
     )
     post2_data.update(
-        tags=post_for_receiving2.tags.split(','),
+        tags=post_for_receiving2.tags,
         owner=UserShowBriefly(id=post_for_receiving2.owner_id, username=post_for_receiving2.owner.username),
         category=CategoryCreate(name=post_for_receiving2.category.name)
     )
@@ -246,12 +246,12 @@ def test_read_posts_sort_by_rating(client, create_posts_for_user: list[Post]) ->
     post1_data = jsonable_encoder(post_for_receiving1)
     post2_data = jsonable_encoder(post_for_receiving2)
     post1_data.update(
-        tags=post_for_receiving1.tags.split(','),
+        tags=post_for_receiving1.tags,
         owner=UserShowBriefly(id=post_for_receiving1.owner_id, username=post_for_receiving1.owner.username),
         category=CategoryCreate(name=post_for_receiving1.category.name)
     )
     post2_data.update(
-        tags=post_for_receiving2.tags.split(','),
+        tags=post_for_receiving2.tags,
         owner=UserShowBriefly(id=post_for_receiving2.owner_id, username=post_for_receiving2.owner.username),
         category=CategoryCreate(name=post_for_receiving2.category.name)
     )
@@ -278,7 +278,7 @@ def test_update_post_with_authorization(client, create_posts_for_user: list[Post
     post_data = jsonable_encoder(post_for_update)
     post_data.update(rating=4,
                      body='post_body_updated',
-                     tags=post_data['tags'].split(','),
+                     tags=post_data['tags'],
                      category=post_for_update.category.name)
     post_update_body = PostUpdate(**post_data)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
@@ -318,7 +318,7 @@ def test_update_post_without_authentication(client, create_posts_for_user: list[
     post_data = jsonable_encoder(post_for_update)
     post_data.update(rating=4,
                      body='post_body_updated',
-                     tags=post_data['tags'].split(','),
+                     tags=post_data['tags'],
                      category=post_for_update.category.name)
     post_update_body = PostUpdate(**post_data)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
@@ -341,7 +341,7 @@ def test_update_post_if_csrf_tokens_mismatch(client, create_posts_for_user: list
     post_data = jsonable_encoder(post_for_update)
     post_data.update(rating=4,
                      body='post_body_updated',
-                     tags=post_data['tags'].split(','),
+                     tags=post_data['tags'],
                      category=post_for_update.category.name)
     post_update_body = PostUpdate(**post_data)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
