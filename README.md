@@ -70,6 +70,7 @@ After minikube and kubectl have been installed you can find all config `*.yaml` 
       SECRET_KEY_TOKEN_GENERATOR: base64 value
       CELERY_BROKER_URL_PROD: base64 value
       CELERY_BACKEND_URL_PROD: base64 value
+      REDIS_CACHE_URL_PROD: base64 value
       AUTH: base64 value
       OAUTH2_KEY: base64 value
       OAUTH2_SECRET: base64 value
@@ -81,6 +82,7 @@ After minikube and kubectl have been installed you can find all config `*.yaml` 
       API_VERSION: "1"
       CELERY_BROKER_URL_DEV: ""
       CELERY_BACKEND_URL_DEV: ""
+      REDIS_CACHE_URL_DEV: ""
       CELERY_TASK_ALWAYS_EAGER: "False"
       AUTH_PROVIDER: flower.views.auth.GithubLoginHandler
       OAUTH2_REDIRECT_URI: http://localhost:nodePort/login
@@ -290,7 +292,8 @@ To run `redis-server` with custom config execute the next command `redis-server 
 	   poetry run celery --app=celery_app.app worker --loglevel=INFO
 	   ....
 	   [tasks]
-	   . accounts.tasks.send_email_to_user
+		   . accounts.tasks.send_email_to_user
+		   . invalidate_cache
 	   ....
 	    
 * In second terminal window after succesfully start first command:
@@ -299,7 +302,11 @@ To run `redis-server` with custom config execute the next command `redis-server 
 	   ....
 	  [I 240208 21:22:03 command:177]
 		  Registered tasks: ['accounts.tasks.send_email_to_user',
+				          ..........
+				       'invalidate_cache']
 	   ....
 
 If you see output looks like above this means all works well.
+
+In order to monitor Celery tasks open your favorite browser and go to `http://example.com:5555`.
  
