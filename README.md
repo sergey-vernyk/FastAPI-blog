@@ -289,22 +289,22 @@ To run `redis-server` with custom config execute the next command `redis-server 
  Once Redis server has been run you can run Celery and monitoring tool Flower using the following command sequence:
 * In first terminal window:
 	
-	   poetry run celery --app=celery_app.app worker --loglevel=INFO
-	   ....
-	   [tasks]
-		   . accounts.tasks.send_email_to_user
-		   . invalidate_cache
-	   ....
+       poetry run celery --app=celery_app.app worker --loglevel=INFO
+       ....
+       [tasks]
+           . accounts.tasks.send_email_to_user
+           . invalidate_cache
+       ....
 	    
 * In second terminal window after succesfully start first command:
 		
-	  poetry run celery --app=celery_app.app flower --port 5555
-	   ....
-	  [I 240208 21:22:03 command:177]
-		  Registered tasks: ['accounts.tasks.send_email_to_user',
-				          ..........
-				       'invalidate_cache']
-	   ....
+      poetry run celery --app=celery_app.app flower --port 5555
+       ....
+      [I 240208 21:22:03 command:177]
+          Registered tasks: ['accounts.tasks.send_email_to_user',
+                                ..........
+                            'invalidate_cache']
+       ....
 
 If you see output looks like above this means all works well.
 
