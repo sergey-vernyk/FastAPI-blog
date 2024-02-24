@@ -1,20 +1,25 @@
 from datetime import timedelta
 
+import pytest
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
+from httpx import AsyncClient
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts.models import User
 from accounts.schemas import UserShowBriefly
-from common.security import create_access_token, get_token_data
-from posts.models import Comment, Post
+from common.security import create_access_token
+from posts.models import Comment, Post, Category
 from posts.schemas import (
     PostShow, PostUpdate,
     CategoryCreate, CommentShow,
     Category as CategorySchema
 )
+from .conftest import fake
 
 POST_DATA = {
-    'title': 'Post title 1',
+    'title': fake.unique.sentence(nb_words=50),
     'body': 'Post body',
     'tags': ['tag1', 'tag2']
 }
@@ -22,14 +27,18 @@ POST_DATA = {
 TEST_CSRF_TOKEN = 'bvhahncoioerucmigcniquw2cewqc'
 
 
-def test_create_post_with_authorization(client, create_post_category, get_token: str, db) -> None:
+@pytest.mark.anyio
+async def test_create_post_with_authorization(client: AsyncClient,
+                                              create_post_category: Category,
+                                              get_token: str,
+                                              db: AsyncSession) -> None:
     """
     Test create post behalf current authenticated user.
     """
     POST_DATA.update(category=create_post_category.name)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
+    response = await client.post(
         url='/posts/create',
         json=POST_DATA,
         headers={
@@ -40,7 +49,11 @@ def test_create_post_with_authorization(client, create_post_category, get_token:
 
     assert response.status_code == status.HTTP_201_CREATED
     response_data = response.json()
-    created_post = db.get(Post, response_data['id'])
+    buffered_post = await db.execute(
+        select(Post)
+        .where(Post.id == response_data['id'])
+    )
+    created_post = buffered_post.scalar()
     created_post_dict = jsonable_encoder(created_post)
     created_post_dict.update(
         tags=created_post.tags,
@@ -50,7 +63,10 @@ def test_create_post_with_authorization(client, create_post_category, get_token:
     assert PostShow(**response_data) == PostShow(**created_post_dict)
 
 
-def test_create_post_without_authentication(client, create_post_category, user_for_token) -> None:
+@pytest.mark.anyio
+async def test_create_post_without_authentication(client: AsyncClient,
+                                                  create_post_category: Category,
+                                                  user_for_token: User) -> None:
     """
     Test create post without authentication.
     """
@@ -58,7 +74,7 @@ def test_create_post_without_authentication(client, create_post_category, user_f
                      owner=user_for_token.username)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
+    response = await client.post(
         url='/posts/create',
         json=POST_DATA,
         headers={'X-CSRFToken': TEST_CSRF_TOKEN}
@@ -68,7 +84,10 @@ def test_create_post_without_authentication(client, create_post_category, user_f
     assert response.json() == {'detail': 'Not authenticated'}
 
 
-def test_create_post_if_csrf_tokens_mismatch(client, create_post_category, user_for_token) -> None:
+@pytest.mark.anyio
+async def test_create_post_if_csrf_tokens_mismatch(client: AsyncClient,
+                                                   create_post_category: Category,
+                                                   user_for_token: User) -> None:
     """
     Test create post if csrf tokens in request header and client cookies are mismatch
     """
@@ -76,7 +95,7 @@ def test_create_post_if_csrf_tokens_mismatch(client, create_post_category, user_
                      owner=user_for_token.username)
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
 
-    response = client.post(
+    response = await client.post(
         url='/posts/create',
         json=POST_DATA,
         headers={'X-CSRFToken': TEST_CSRF_TOKEN}
@@ -86,7 +105,10 @@ def test_create_post_if_csrf_tokens_mismatch(client, create_post_category, user_
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_create_post_without_particular_scopes(client, create_post_category, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_create_post_without_particular_scopes(client: AsyncClient,
+                                                     create_post_category: Category,
+                                                     create_multiple_users: list[User]) -> None:
     """
     Test create post without particular scope for endpoint.
     """
@@ -96,7 +118,7 @@ def test_create_post_without_particular_scopes(client, create_post_category, cre
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
+    response = await client.post(
         url='/posts/create',
         json=POST_DATA,
         # token without particular scope
@@ -110,14 +132,15 @@ def test_create_post_without_particular_scopes(client, create_post_category, cre
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_create_category_with_authorization(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_create_category_with_authorization(client: AsyncClient, get_token: str) -> None:
     """
     Test create category for posts.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
-        url='/posts/category/create',
+    response = await client.post(
+        url='/posts/categories/create',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -129,14 +152,15 @@ def test_create_category_with_authorization(client, get_token: str) -> None:
     assert response.json()['name'] == 'Computers'
 
 
-def test_create_category_without_authentication(client) -> None:
+@pytest.mark.anyio
+async def test_create_category_without_authentication(client: AsyncClient) -> None:
     """
     Test create category for posts without authentication.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
-        url='/posts/category/create',
+    response = await client.post(
+        url='/posts/categories/create',
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
         json={'name': 'Computers'}
     )
@@ -145,7 +169,9 @@ def test_create_category_without_authentication(client) -> None:
     assert response.json() == {'detail': 'Not authenticated'}
 
 
-def test_create_category_without_particular_scopes(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_create_category_without_particular_scopes(client: AsyncClient,
+                                                         create_multiple_users: list[User]) -> None:
     """
     Test create category for posts without authorization with appropriate scope
     """
@@ -153,8 +179,8 @@ def test_create_category_without_particular_scopes(client, create_multiple_users
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
-        url='/posts/category/create',
+    response = await client.post(
+        url='/posts/categories/create',
         json={'name': 'Computers'},
         headers={
             'Authorization': f'Bearer {token}',
@@ -166,14 +192,15 @@ def test_create_category_without_particular_scopes(client, create_multiple_users
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_create_category_if_csrf_tokens_mismatch(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_create_category_if_csrf_tokens_mismatch(client: AsyncClient, get_token: str) -> None:
     """
     Test create category for posts if csrf tokens in request header and client cookies are mismatch.
     """
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
 
-    response = client.post(
-        url='/posts/category/create',
+    response = await client.post(
+        url='/posts/categories/create',
         json={'name': 'Computers'},
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -185,12 +212,15 @@ def test_create_category_if_csrf_tokens_mismatch(client, get_token: str) -> None
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_read_post(client, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_read_post(client: AsyncClient, create_posts_for_user: list[Post], mock_redis) -> None:
     """
     Test read post by its id.
     """
     post_for_receiving = create_posts_for_user[1]
-    response = client.get(url=f'posts/read/{post_for_receiving.id}')
+    response = await client.get(
+        url=f'posts/read/{post_for_receiving.id}',
+    )
 
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
@@ -203,74 +233,111 @@ def test_read_post(client, create_posts_for_user: list[Post]) -> None:
     assert PostShow(**response_data) == PostShow(**post_data_dict)
 
 
-def test_read_posts(client, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_read_posts(client: AsyncClient, create_posts_for_user: list[Post], mock_redis, db: AsyncSession) -> None:
     """
     Test read all posts in the database.
     """
-    post_for_receiving1 = create_posts_for_user[0]
-    post_for_receiving2 = create_posts_for_user[1]
-    response = client.get(url='posts/read_all/posts', params={'sort_by': 'created_desc'})
+    response = await client.get(url='posts/posts/read_all', params={'sort_by': 'created_desc'})
 
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
     # sort response data because we must be sure that data will always be in the same ordering
     response_data_sorted = sorted(response_data, key=lambda i: i['id'])
+
     assert len(response_data_sorted) == 2
-    post1_data = jsonable_encoder(post_for_receiving1)
-    post2_data = jsonable_encoder(post_for_receiving2)
-    post1_data.update(
-        tags=post_for_receiving1.tags,
-        owner=UserShowBriefly(id=post_for_receiving1.owner_id, username=post_for_receiving1.owner.username),
-        category=CategoryCreate(name=post_for_receiving1.category.name)
-    )
-    post2_data.update(
-        tags=post_for_receiving2.tags,
-        owner=UserShowBriefly(id=post_for_receiving2.owner_id, username=post_for_receiving2.owner.username),
-        category=CategoryCreate(name=post_for_receiving2.category.name)
-    )
-    assert PostShow(**response_data_sorted[0]) == PostShow(**post1_data)
-    assert PostShow(**response_data_sorted[1]) == PostShow(**post2_data)
+
+    for p in zip(response_data_sorted, create_posts_for_user):
+        posts_data = jsonable_encoder(p[1])
+        posts_data.update(
+            tags=p[1].tags,
+            owner=UserShowBriefly(id=p[1].owner_id, username=p[1].owner.username),
+            category=CategoryCreate(name=p[1].category.name)
+        )
+
+        assert PostShow(**p[0]) == PostShow(**posts_data)
 
 
-def test_read_posts_sort_by_rating(client, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_read_posts_sort_by_rating(client: AsyncClient,
+                                         create_posts_for_user: list[Post],
+                                         mock_redis,
+                                         db: AsyncSession) -> None:
     """
     Test read all posts in the database.
     """
-    post_for_receiving1 = create_posts_for_user[0]
-    post_for_receiving2 = create_posts_for_user[1]
-    response = client.get(url='posts/read_all/posts', params={'sort_by': 'rating_desc'})
+    post_rating4 = create_posts_for_user[1]
+    post_rating3 = create_posts_for_user[0]
+    response = await client.get(url='posts/posts/read_all', params={'sort_by': 'rating_desc'})
 
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
+
     assert len(response_data) == 2
-    post1_data = jsonable_encoder(post_for_receiving1)
-    post2_data = jsonable_encoder(post_for_receiving2)
-    post1_data.update(
-        tags=post_for_receiving1.tags,
-        owner=UserShowBriefly(id=post_for_receiving1.owner_id, username=post_for_receiving1.owner.username),
-        category=CategoryCreate(name=post_for_receiving1.category.name)
+
+    # post with rating 4 must be first in the response (index 0)
+    post_data = jsonable_encoder(post_rating4)
+    post_data.update(
+        tags=post_rating4.tags,
+        owner=UserShowBriefly(id=post_rating4.owner_id, username=post_rating4.owner.username),
+        category=CategoryCreate(name=post_rating4.category.name)
     )
-    post2_data.update(
-        tags=post_for_receiving2.tags,
-        owner=UserShowBriefly(id=post_for_receiving2.owner_id, username=post_for_receiving2.owner.username),
-        category=CategoryCreate(name=post_for_receiving2.category.name)
+    assert PostShow(**response_data[0]) == PostShow(**post_data)
+
+    # post with rating 4 must be second in the response (index 1)
+    post_data = jsonable_encoder(post_rating3)
+    post_data.update(
+        tags=post_rating3.tags,
+        owner=UserShowBriefly(id=post_rating3.owner_id, username=post_rating3.owner.username),
+        category=CategoryCreate(name=post_rating3.category.name)
     )
-    assert PostShow(**response_data[0]) == PostShow(**post2_data)
-    assert PostShow(**response_data[1]) == PostShow(**post1_data)
+    assert PostShow(**response_data[1]) == PostShow(**post_data)
 
 
-def test_read_post_categories(client, create_post_category) -> None:
+@pytest.mark.anyio
+async def test_read_post_category(client: AsyncClient,
+                                  create_post_category: Category,
+                                  mock_redis) -> None:
+    """
+    Test read one post category.
+    """
+    response = await client.get(url=f'/posts/categories/read/{create_post_category.id}')
+    assert response.status_code == status.HTTP_200_OK
+    assert isinstance(response.json(), dict)
+    assert CategorySchema(**response.json()) == CategorySchema(**jsonable_encoder(create_post_category))
+
+
+@pytest.mark.anyio
+async def test_read_post_category_if_category_not_exists(client: AsyncClient,
+                                                         create_post_category: Category,
+                                                         mock_redis) -> None:
+    """
+    Test read one post category.
+    """
+    response = await client.get(url='/posts/categories/read/155')
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json() == {'detail': 'Category with passed id does not exists'}
+
+
+@pytest.mark.anyio
+async def test_read_post_categories(client: AsyncClient,
+                                    create_post_category: Category,
+                                    db: AsyncSession,
+                                    mock_redis) -> None:
     """
     Test read all posts categories.
     """
-    response = client.get(url='/posts/read_all/categories')
+    response = await client.get(url='/posts/categories/read_all')
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
     assert len(response_data) == 1
     assert CategorySchema(**jsonable_encoder(create_post_category)) == CategorySchema(**response_data[0])
 
 
-def test_update_post_with_authorization(client, create_posts_for_user: list[Post], get_token: str) -> None:
+@pytest.mark.anyio
+async def test_update_post_with_authorization(client: AsyncClient,
+                                              create_posts_for_user: list[Post],
+                                              get_token: str) -> None:
     """
     Update post by passed post_id with corresponding authorization scope.
     """
@@ -283,7 +350,7 @@ def test_update_post_with_authorization(client, create_posts_for_user: list[Post
     post_update_body = PostUpdate(**post_data)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
+    response = await client.put(
         url=f'/posts/update/{post_for_update.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -310,7 +377,8 @@ def test_update_post_with_authorization(client, create_posts_for_user: list[Post
     assert PostShow(**response_data) == expected_data
 
 
-def test_update_post_without_authentication(client, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_update_post_without_authentication(client: AsyncClient, create_posts_for_user: list[Post]) -> None:
     """
     Update post by passed post_id without authentication.
     """
@@ -323,7 +391,7 @@ def test_update_post_without_authentication(client, create_posts_for_user: list[
     post_update_body = PostUpdate(**post_data)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
+    response = await client.put(
         url=f'/posts/update/{post_for_update.id}',
         json=post_update_body.model_dump(),
         headers={'X-CSRFToken': TEST_CSRF_TOKEN}
@@ -333,7 +401,8 @@ def test_update_post_without_authentication(client, create_posts_for_user: list[
     assert response.json() == {'detail': 'Not authenticated'}
 
 
-def test_update_post_if_csrf_tokens_mismatch(client, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_update_post_if_csrf_tokens_mismatch(client: AsyncClient, create_posts_for_user: list[Post]) -> None:
     """
     Update post by passed post_id if csrf tokens in request header and client cookies are mismatch.
     """
@@ -346,7 +415,7 @@ def test_update_post_if_csrf_tokens_mismatch(client, create_posts_for_user: list
     post_update_body = PostUpdate(**post_data)
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
+    response = await client.put(
         url=f'/posts/update/{post_for_update.id}',
         json=post_update_body.model_dump(),
         headers={'X-CSRFToken': 'wrong_csrf_token'}
@@ -356,14 +425,18 @@ def test_update_post_if_csrf_tokens_mismatch(client, create_posts_for_user: list
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_delete_post_with_authorization(client, get_token: str, create_posts_for_user: list[Post], db):
+@pytest.mark.anyio
+async def test_delete_post_with_authorization(client: AsyncClient,
+                                              get_token: str,
+                                              create_posts_for_user: list[Post],
+                                              db: AsyncSession):
     """
     Test delete post if user has appropriate authorization scope, and it is a post's owner.
     """
     post_for_delete = create_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
+    response = await client.delete(
         url=f'posts/delete/{post_for_delete.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -372,12 +445,18 @@ def test_delete_post_with_authorization(client, get_token: str, create_posts_for
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert db.get(Post, post_for_delete.id) is None
+
+    buffered_post = await db.execute(
+        select(Post)
+        .where(Post.id == post_for_delete.id)
+    )
+    assert buffered_post.scalar() is None
 
 
-def test_delete_post_not_by_its_owner(client,
-                                      create_multiple_users: list[User],
-                                      create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_delete_post_not_by_its_owner(client: AsyncClient,
+                                            create_multiple_users: list[User],
+                                            create_posts_for_user: list[Post]) -> None:
     """
     Test delete post if user is not the owner of this post.
     """
@@ -388,7 +467,7 @@ def test_delete_post_not_by_its_owner(client,
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
+    response = await client.delete(
         url=f'posts/delete/{post_for_delete.id}',
         headers={
             'Authorization': f'Bearer {token}',
@@ -397,47 +476,73 @@ def test_delete_post_not_by_its_owner(client,
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json() == {'detail': 'Post can be updated only by staff users or by its owner'}
+    assert response.json() == {'detail': 'Post can be deleted/updated only by staff users or by its owner'}
 
 
-def test_delete_post_by_staff_users(client, get_token: str, create_posts_for_user: list[Post], db) -> None:
+@pytest.mark.anyio
+async def test_delete_post_by_staff_users(client: AsyncClient,
+                                          create_posts_for_user: list[Post],
+                                          create_multiple_users: list[User],
+                                          db: AsyncSession) -> None:
     """
     Test delete post if user has appropriate authorization scope, and it is a staff user.
     """
-    # get username from access token, find it in the db and update its role
-    username_from_token = get_token_data(get_token).username
-    db.query(User).filter(User.username == username_from_token).update({'role': 'moderator'})
-
+    staff_user = create_multiple_users[0]
     post_for_delete = create_posts_for_user[1]
+    # change user role to `moderator`
+    await db.execute(
+        update(User.__table__)
+        .where(User.id == staff_user.id)
+        .values(**{'role': 'moderator'})
+    )
+    await db.commit()
+    # get updated staff user
+    buffered_staff_user = await db.execute(
+        select(User)
+        .where(User.id == staff_user.id)
+    )
+
+    staff_user = buffered_staff_user.scalar()
+    await db.refresh(staff_user)
+
+    # token with appropriate scope for staff user
+    token = create_access_token(data={'sub': staff_user.username, 'scopes': ['post:delete']},
+                                expires_delta=timedelta(minutes=5))
+
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
+    response = await client.delete(
         url=f'posts/delete/{post_for_delete.id}',
         headers={
-            'Authorization': f'Bearer {get_token}',
+            'Authorization': f'Bearer {token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
         }
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert db.get(Post, post_for_delete.id) is None
+    buffered_post = await db.execute(
+        select(Post)
+        .where(Post.id == post_for_delete.id)
+    )
+    assert buffered_post.scalar() is None
 
 
-def test_delete_post_not_by_its_owner_if_csrf_tokens_mismatch(client,
-                                                              create_multiple_users: list[User],
-                                                              create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_delete_post_not_by_its_owner_if_csrf_tokens_mismatch(client: AsyncClient,
+                                                                    create_multiple_users: list[User],
+                                                                    create_posts_for_user: list[Post]) -> None:
     """
     Test delete post if user is not the owner of this post,
     and if csrf tokens in request header and client cookies are mismatch.
     """
     post_for_delete = create_posts_for_user[1]
-    # user allow to delete post, but it is not post's owner
+    # user allows to delete post, but it's not post's owner
     user = create_multiple_users[0]
     token = create_access_token(data={'sub': user.username, 'scopes': ['post:delete']},
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
 
-    response = client.delete(
+    response = await client.delete(
         url=f'posts/delete/{post_for_delete.id}',
         headers={
             'Authorization': f'Bearer {token}',
@@ -449,15 +554,20 @@ def test_delete_post_not_by_its_owner_if_csrf_tokens_mismatch(client,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_create_comment_with_authorization(client, get_token: str, db, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_create_comment_with_authorization(client: AsyncClient,
+                                                 user_for_token: User,
+                                                 get_token: str,
+                                                 db: AsyncSession,
+                                                 create_posts_for_user: list[Post]) -> None:
     """
     Test create comment for any post if user is authorized with appropriate scope.
     """
     post_for_comment = create_posts_for_user[0]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
-        url=f'/posts/create_comment/{post_for_comment.id}',
+    response = await client.post(
+        url=f'/posts/comments/create/{post_for_comment.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -467,17 +577,25 @@ def test_create_comment_with_authorization(client, get_token: str, db, create_po
 
     assert response.status_code == status.HTTP_201_CREATED
     response_data = response.json()
-    username_from_token = get_token_data(get_token).username
-    user = db.query(User).filter(User.username == username_from_token).first()
-    assert post_for_comment.owner == user
+
+    buffered_comment = await db.execute(
+        select(Comment)
+        .where(Comment.owner == user_for_token)
+        .limit(1)
+    )
+
+    comment = buffered_comment.scalar()
+
+    assert comment is not None
     assert response_data['likes'] == []
     assert response_data['dislikes'] == []
     assert response_data['body'] == f'Comment for post with id {post_for_comment.id}'
 
 
-def test_create_comment_without_particular_scopes(client,
-                                                  create_posts_for_user: list[Post],
-                                                  create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_create_comment_without_particular_scopes(client: AsyncClient,
+                                                        create_posts_for_user: list[Post],
+                                                        create_multiple_users: list[User]) -> None:
     """
     Test create comment if user has not appropriate permission scope to do this.
     """
@@ -486,8 +604,8 @@ def test_create_comment_without_particular_scopes(client,
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    response = client.post(
-        url=f'/posts/create_comment/{post_for_comment.id}',
+    response = await client.post(
+        url=f'/posts/comments/create/{post_for_comment.id}',
         headers={
             'Authorization': f'Bearer {token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -499,13 +617,14 @@ def test_create_comment_without_particular_scopes(client,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_create_comment_if_post_does_not_exist(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_create_comment_if_post_does_not_exist(client: AsyncClient, get_token: str) -> None:
     """
     Test create comment if post with passed id does not exist.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    response = client.post(
-        url='/posts/create_comment/150',
+    response = await client.post(
+        url='/posts/comments/create/150',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -517,9 +636,10 @@ def test_create_comment_if_post_does_not_exist(client, get_token: str) -> None:
     assert response.json() == {'detail': 'Post with passed id does not exists'}
 
 
-def test_create_comment_if_csrf_tokens_mismatch(client,
-                                                create_posts_for_user: list[Post],
-                                                create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_create_comment_if_csrf_tokens_mismatch(client: AsyncClient,
+                                                      create_posts_for_user: list[Post],
+                                                      create_multiple_users: list[User]) -> None:
     """
     Test create comment if csrf tokens in request header and client cookies are mismatch.
     """
@@ -528,8 +648,8 @@ def test_create_comment_if_csrf_tokens_mismatch(client,
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
-    response = client.post(
-        url=f'/posts/create_comment/{post_for_comment.id}',
+    response = await client.post(
+        url=f'/posts/comments/create/{post_for_comment.id}',
         headers={
             'Authorization': f'Bearer {token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -541,17 +661,19 @@ def test_create_comment_if_csrf_tokens_mismatch(client,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_set_comment_like_or_dislike_with_particular_scope(client,
-                                                           get_token: str,
-                                                           create_comments_to_posts_for_user: list[Comment]) -> None:
+@pytest.mark.anyio
+async def test_set_comment_like_or_dislike_with_particular_scope(client: AsyncClient,
+                                                                 get_token: str,
+                                                                 create_comments_to_posts_for_user: list[Comment]
+                                                                 ) -> None:
     """
     Test set like or dislike for comment with comment_id.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
     comment_for_set = create_comments_to_posts_for_user[1]
     # set like
-    response = client.post(
-        url=f'/posts/comment/like/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/like/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -564,8 +686,8 @@ def test_set_comment_like_or_dislike_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
     # set like again
-    response = client.post(
-        url=f'/posts/comment/like/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/like/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -578,8 +700,8 @@ def test_set_comment_like_or_dislike_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
     # set dislike
-    response = client.post(
-        url=f'/posts/comment/dislike/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/dislike/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -592,8 +714,8 @@ def test_set_comment_like_or_dislike_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
     # set dislike again
-    response = client.post(
-        url=f'/posts/comment/dislike/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/dislike/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -606,8 +728,8 @@ def test_set_comment_like_or_dislike_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
     # set like
-    response = client.post(
-        url=f'/posts/comment/like/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/like/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -620,8 +742,8 @@ def test_set_comment_like_or_dislike_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
     # set dislike
-    response = client.post(
-        url=f'/posts/comment/dislike/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/dislike/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -634,8 +756,8 @@ def test_set_comment_like_or_dislike_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
     # set like
-    response = client.post(
-        url=f'/posts/comment/like/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/like/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -648,14 +770,15 @@ def test_set_comment_like_or_dislike_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_set)) == CommentShow(**response_data)
 
 
-def test_set_comment_like_or_dislike_if_post_does_not_exist(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_set_comment_like_or_dislike_if_post_does_not_exist(client: AsyncClient, get_token: str) -> None:
     """
     Test set like or dislike if passed comment does not exist by its id.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
-        url='/posts/comment/like/155',
+    response = await client.post(
+        url='/posts/comments/like/155',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -666,31 +789,11 @@ def test_set_comment_like_or_dislike_if_post_does_not_exist(client, get_token: s
     assert response.json() == {'detail': 'Comment with passed id does not exists'}
 
 
-def test_set_comment_like_or_dislike_if_passed_wrong_command(client,
-                                                             get_token: str,
-                                                             create_comments_to_posts_for_user: list[Comment]) -> None:
-    """
-    Test set like or dislike if passed neither like nor dislike as action.
-    """
-    comment_for_set = create_comments_to_posts_for_user[1]
-    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-
-    response = client.post(
-        # will pass `wrong` command instead of either `like` or `dislike`
-        url=f'/posts/comment/wrong/{comment_for_set.id}',
-        headers={
-            'Authorization': f'Bearer {get_token}',
-            'X-CSRFToken': TEST_CSRF_TOKEN
-        }
-    )
-
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert response.json() == {'detail': 'Action is either like or dislike. Action <wrong> was passed'}
-
-
-def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client,
-                                                             get_token: str,
-                                                             create_comments_to_posts_for_user: list[Comment]) -> None:
+@pytest.mark.anyio
+async def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client: AsyncClient,
+                                                                   get_token: str,
+                                                                   create_comments_to_posts_for_user: list[
+                                                                       Comment]) -> None:
     """
     Test set like or dislike for comment with comment_id,
     if csrf tokens in request header and client cookies are mismatch.
@@ -698,8 +801,8 @@ def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client,
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
     comment_for_set = create_comments_to_posts_for_user[1]
     # set like
-    response = client.post(
-        url=f'/posts/comment/like/{comment_for_set.id}',
+    response = await client.post(
+        url=f'/posts/comments/like/{comment_for_set.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -710,9 +813,10 @@ def test_set_comment_like_or_dislike_if_csrf_tokens_mismatch(client,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_update_comment_with_particular_scope(client,
-                                              create_comments_to_posts_for_user: list[Comment],
-                                              get_token: str) -> None:
+@pytest.mark.anyio
+async def test_update_comment_with_particular_scope(client: AsyncClient,
+                                                    create_comments_to_posts_for_user: list[Comment],
+                                                    get_token: str) -> None:
     """
     Test update comment with passed comment_id if user has appropriate scope,
     and user is owner of that comment.
@@ -721,8 +825,8 @@ def test_update_comment_with_particular_scope(client,
     comment_for_update = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
-        url=f'/posts/comment/update/{comment_for_update.id}',
+    response = await client.put(
+        url=f'/posts/comments/update/{comment_for_update.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -734,22 +838,43 @@ def test_update_comment_with_particular_scope(client,
     assert CommentShow(**jsonable_encoder(comment_for_update)) == CommentShow(**response.json())
 
 
-def test_update_comment_if_user_is_staff(client, create_comments_to_posts_for_user: list[Comment], get_token: str, db):
+@pytest.mark.anyio
+async def test_update_comment_if_user_is_staff(client: AsyncClient,
+                                               create_comments_to_posts_for_user: list[Comment],
+                                               create_multiple_users: list[User],
+                                               db: AsyncSession):
     """
     Test update comment with passed comment_id if user has appropriate scope,
     and user is a staff user.
     """
-    # get username from access token, find it in the db and update its role
-    username_from_token = get_token_data(get_token).username
-    db.query(User).filter(User.username == username_from_token).update({'role': 'moderator'})
-    # this comment was posted by user from `get_token` token data
+    staff_user = create_multiple_users[0]
     comment_for_update = create_comments_to_posts_for_user[1]
-    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    # change user role to `moderator`
+    await db.execute(
+        update(User.__table__)
+        .where(User.id == staff_user.id)
+        .values(**{'role': 'moderator'})
+    )
+    await db.commit()
 
-    response = client.put(
-        url=f'/posts/comment/update/{comment_for_update.id}',
+    # get updated staff user
+    buffered_staff_user = await db.execute(
+        select(User)
+        .where(User.id == staff_user.id)
+    )
+
+    staff_user = buffered_staff_user.scalar()
+    await db.refresh(staff_user)
+
+    # token with appropriate scope for staff user
+    token = create_access_token(data={'sub': staff_user.username, 'scopes': ['comment:update']},
+                                expires_delta=timedelta(minutes=5))
+
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    response = await client.put(
+        url=f'/posts/comments/update/{comment_for_update.id}',
         headers={
-            'Authorization': f'Bearer {get_token}',
+            'Authorization': f'Bearer {token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
         },
         json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
@@ -759,23 +884,50 @@ def test_update_comment_if_user_is_staff(client, create_comments_to_posts_for_us
     assert CommentShow(**jsonable_encoder(comment_for_update)) == CommentShow(**response.json())
 
 
-def test_update_comment_if_user_is_not_staff_or_owner(client,
-                                                      create_comments_to_posts_for_user: list[Comment],
-                                                      create_multiple_users: list[User],
-                                                      get_token: str,
-                                                      db) -> None:
+@pytest.mark.anyio
+async def test_update_comment_if_user_is_not_staff_or_owner(client: AsyncClient,
+                                                            create_comments_to_posts_for_user: list[Comment],
+                                                            create_multiple_users: list[User],
+                                                            get_token: str,
+                                                            db: AsyncSession) -> None:
     """
-    Test update comment with passed comment_id if user has appropriate scope,
-    but user not a staff.
+    Test update comment with passed `comment_id` if user has appropriate scope,
+    but user is not a staff or is not owner.
     """
+    # if user is not owner
     comment_for_update = create_comments_to_posts_for_user[1]
+    new_comment_owner = create_multiple_users[0]
+    user_for_update_comment = create_multiple_users[1]
     # change owner for comment
-    db.query(Comment).update({'owner_id': create_multiple_users[1].id})
-    create_comments_to_posts_for_user[1].owner = create_multiple_users[1]
+    await db.execute(
+        update(Comment.__table__)
+        .where(Comment.id == comment_for_update.id)
+        .values(**{'owner_id': new_comment_owner.id})
+    )
+    await db.commit()
+    await db.refresh(comment_for_update)
+
+    # token with appropriate scope for user who will update comment
+    token = create_access_token(data={'sub': user_for_update_comment.username, 'scopes': ['comment:update']},
+                                expires_delta=timedelta(minutes=5))
+
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
-        url=f'/posts/comment/update/{comment_for_update.id}',
+    response = await client.put(
+        url=f'/posts/comments/update/{comment_for_update.id}',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        },
+        json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'Comment can be deleted/updated only by staff users or by its owner'}
+
+    #  if user is not staff
+    response = await client.put(
+        url=f'/posts/comments/update/{comment_for_update.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -784,25 +936,13 @@ def test_update_comment_if_user_is_not_staff_or_owner(client,
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json() == {'detail': 'Comment can be updated only by staff users or by its owner'}
-
-    # owner is not staff user
-    response = client.put(
-        url=f'/posts/comment/update/{comment_for_update.id}',
-        headers={
-            'Authorization': f'Bearer {get_token}',
-            'X-CSRFToken': TEST_CSRF_TOKEN
-        },
-        json={'body': f'Comment body2 for post {comment_for_update.id} updated!'}
-    )
-
-    assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json() == {'detail': 'Comment can be updated only by staff users or by its owner'}
+    assert response.json() == {'detail': 'Comment can be deleted/updated only by staff users or by its owner'}
 
 
-def test_update_comment_without_particular_scope(client,
-                                                 create_comments_to_posts_for_user: list[Comment],
-                                                 create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_update_comment_without_particular_scope(client: AsyncClient,
+                                                       create_comments_to_posts_for_user: list[Comment],
+                                                       create_multiple_users: list[User]) -> None:
     """
     Test update comment with passed comment_id,
     if user has not particular access scope for that action.
@@ -813,8 +953,8 @@ def test_update_comment_without_particular_scope(client,
     comment_for_update = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
-        url=f'/posts/comment/update/{comment_for_update.id}',
+    response = await client.put(
+        url=f'/posts/comments/update/{comment_for_update.id}',
         headers={
             'Authorization': f'Bearer {token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -826,14 +966,15 @@ def test_update_comment_without_particular_scope(client,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_update_comment_if_passed_wrong_comment_id(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_update_comment_if_passed_wrong_comment_id(client: AsyncClient, get_token: str) -> None:
     """
     Test update comment with passed wrong comment_id which does not exist in the db.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
-        url='/posts/comment/update/150',  # 150 is not existing id
+    response = await client.put(
+        url='/posts/comments/update/150',  # 150 is not existing id
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -845,9 +986,10 @@ def test_update_comment_if_passed_wrong_comment_id(client, get_token: str) -> No
     assert response.json() == {'detail': 'Comment with passed id does not exists'}
 
 
-def test_update_comment_if_csrf_tokens_mismatch(client,
-                                                create_comments_to_posts_for_user: list[Comment],
-                                                get_token: str) -> None:
+@pytest.mark.anyio
+async def test_update_comment_if_csrf_tokens_mismatch(client: AsyncClient,
+                                                      create_comments_to_posts_for_user: list[Comment],
+                                                      get_token: str) -> None:
     """
     Test update comment with passed comment_id if csrf tokens in request header and client cookies are mismatch.
     """
@@ -855,8 +997,8 @@ def test_update_comment_if_csrf_tokens_mismatch(client,
     comment_for_update = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.put(
-        url=f'/posts/comment/update/{comment_for_update.id}',
+    response = await client.put(
+        url=f'/posts/comments/update/{comment_for_update.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': 'wrong_csrf_token'
@@ -868,18 +1010,19 @@ def test_update_comment_if_csrf_tokens_mismatch(client,
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_delete_comment_with_particular_scope(client,
-                                              get_token: str,
-                                              create_comments_to_posts_for_user: list[Comment],
-                                              db) -> None:
+@pytest.mark.anyio
+async def test_delete_comment_with_particular_scope(client: AsyncClient,
+                                                    get_token: str,
+                                                    create_comments_to_posts_for_user: list[Comment],
+                                                    db: AsyncSession) -> None:
     """
     Test delete comment by its id if user has appropriate access scope for this action.
     """
     comment_for_delete = create_comments_to_posts_for_user[0]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
-        url=f'posts/comment/delete/{comment_for_delete.id}',
+    response = await client.delete(
+        url=f'posts/comments/delete/{comment_for_delete.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -887,17 +1030,22 @@ def test_delete_comment_with_particular_scope(client,
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert db.get(Comment, comment_for_delete.id) is None
+    buffered_comment = await db.execute(
+        select(Comment)
+        .where(Comment.id == comment_for_delete.id)
+    )
+    assert buffered_comment.scalar() is None
 
 
-def test_delete_comment_if_passed_wrong_comment_id(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_delete_comment_if_passed_wrong_comment_id(client: AsyncClient, get_token: str) -> None:
     """
     Test delete comment by its id if passed id does not matched with any comment.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
-        url='posts/comment/delete/150',
+    response = await client.delete(
+        url='posts/comments/delete/150',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -908,22 +1056,47 @@ def test_delete_comment_if_passed_wrong_comment_id(client, get_token: str) -> No
     assert response.json() == {'detail': 'Comment with passed id does not exists'}
 
 
-def test_delete_comment_if_user_not_owner_or_staff(client,
-                                                   get_token: str,
-                                                   create_comments_to_posts_for_user: list[Comment],
-                                                   create_multiple_users: list[User],
-                                                   db) -> None:
+@pytest.mark.anyio
+async def test_delete_comment_if_user_not_owner_or_staff(client: AsyncClient,
+                                                         get_token: str,
+                                                         create_comments_to_posts_for_user: list[Comment],
+                                                         create_multiple_users: list[User],
+                                                         db: AsyncSession) -> None:
     """
-    Test delete comment by its id if user not staff or comment's owner.
+    Test delete comment by its id if user is not staff or is not comment's owner.
     """
+    # if user is not owner
     comment_for_delete = create_comments_to_posts_for_user[1]
+    old_comment_owner = comment_for_delete.owner
+    new_comment_owner = create_multiple_users[1]
     # change owner for comment for delete
-    db.query(Comment).filter(Comment.id == comment_for_delete.id).update({'owner_id': create_multiple_users[1].id})
-    create_comments_to_posts_for_user[1].owner = create_multiple_users[1]
+    await db.execute(
+        update(Comment.__table__)
+        .where(Comment.id == comment_for_delete.id)
+        .values(**{'owner_id': new_comment_owner.id})
+    )
+    await db.commit()
+    await db.refresh(comment_for_delete)
+
+    token = create_access_token(data={'sub': old_comment_owner.username, 'scopes': ['comment:delete']},
+                                expires_delta=timedelta(minutes=5))
+
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
-        url=f'posts/comment/delete/{comment_for_delete.id}',
+    response = await client.delete(
+        url=f'posts/comments/delete/{comment_for_delete.id}',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-CSRFToken': TEST_CSRF_TOKEN
+        }
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json() == {'detail': 'Comment can be deleted/updated only by staff users or by its owner'}
+
+    # if user is not staff
+    response = await client.delete(
+        url=f'posts/comments/delete/{comment_for_delete.id}',
         headers={
             'Authorization': f'Bearer {get_token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -931,12 +1104,13 @@ def test_delete_comment_if_user_not_owner_or_staff(client,
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json() == {'detail': 'Comment can be updated only by staff users or by its owner'}
+    assert response.json() == {'detail': 'Comment can be deleted/updated only by staff users or by its owner'}
 
 
-def test_delete_comment_without_particular_scope(client,
-                                                 create_comments_to_posts_for_user: list[Comment],
-                                                 create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_delete_comment_without_particular_scope(client: AsyncClient,
+                                                       create_comments_to_posts_for_user: list[Comment],
+                                                       create_multiple_users: list[User]) -> None:
     """
     Test delete comment by its id if user has not appropriate scope to do this action.
     """
@@ -946,8 +1120,8 @@ def test_delete_comment_without_particular_scope(client,
     comment_for_delete = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
-        url=f'posts/comment/delete/{comment_for_delete.id}',
+    response = await client.delete(
+        url=f'posts/comments/delete/{comment_for_delete.id}',
         headers={
             'Authorization': f'Bearer {token}',
             'X-CSRFToken': TEST_CSRF_TOKEN
@@ -958,9 +1132,10 @@ def test_delete_comment_without_particular_scope(client,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_delete_comment_if_csrf_tokens_mismatch(client,
-                                                create_comments_to_posts_for_user: list[Comment],
-                                                create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_delete_comment_if_csrf_tokens_mismatch(client: AsyncClient,
+                                                      create_comments_to_posts_for_user: list[Comment],
+                                                      create_multiple_users: list[User]) -> None:
     """
     Test delete comment by its id if csrf tokens in request header and client cookies are mismatch.
     """
@@ -970,8 +1145,8 @@ def test_delete_comment_if_csrf_tokens_mismatch(client,
     comment_for_delete = create_comments_to_posts_for_user[1]
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
 
-    response = client.delete(
-        url=f'posts/comment/delete/{comment_for_delete.id}',
+    response = await client.delete(
+        url=f'posts/comments/delete/{comment_for_delete.id}',
         headers={
             'Authorization': f'Bearer {token}',
             'X-CSRFToken': TEST_CSRF_TOKEN

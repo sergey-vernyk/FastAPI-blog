@@ -292,8 +292,8 @@ To run `redis-server` with custom config execute the next command `redis-server 
        poetry run celery --app=celery_app.app worker --loglevel=INFO
        ....
        [tasks]
-           . accounts.tasks.send_email_to_user
            . invalidate_cache
+           . send_user_email
        ....
 	    
 * In second terminal window after succesfully start first command:
@@ -301,9 +301,10 @@ To run `redis-server` with custom config execute the next command `redis-server 
       poetry run celery --app=celery_app.app flower --port 5555
        ....
       [I 240208 21:22:03 command:177]
-          Registered tasks: ['accounts.tasks.send_email_to_user',
-                                ..........
-                            'invalidate_cache']
+          Registered tasks:
+                    [................
+                    'invalidate_cache',
+                    'send_user_email']
        ....
 
 If you see output looks like above this means all works well.

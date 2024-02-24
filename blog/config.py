@@ -14,8 +14,8 @@ class Settings(BaseSettings):
 
     app_name: str = 'Blog API'
     admin_email: str
-    database_url: str
-    database_url_test: str
+    database_url_async: str
+    database_url_test_async: str
     # access JWT token data
     secret_key: str
     algorithm: str

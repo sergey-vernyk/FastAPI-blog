@@ -1,38 +1,41 @@
-import os.path
+import os
 import shutil
 from base64 import urlsafe_b64encode
-from datetime import datetime, timedelta
+from datetime import timedelta, datetime
 from time import sleep
 from unittest.mock import patch
 
+import pytest
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
+from httpx import AsyncClient
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts.models import User
 from accounts.schemas import UserShow
-from accounts.utils import USER_IMAGES_DIR_PATH, token_generator
-from common.security import create_access_token, get_password_hash, get_token_data
+from accounts.utils import token_generator
+from common.security import create_access_token, get_token_data, get_password_hash
 from posts.models import Comment, Post
 from posts.schemas import UserCommentsShow, UserPostsShow
-from .conftest import USER_DATA
+from settings.development_dirs import USER_IMAGES_DIR_PATH
+from .conftest import USER_DATA, fake
 
 TEST_CSRF_TOKEN = 'bvhahncoioerucmigcniquw2cewqc'
 
 
-def test_create_user_success(client, mocker) -> None:
+@pytest.mark.anyio
+async def test_create_user_success(client: AsyncClient, mock_smtp) -> None:
     """
     Test create user with passed parameters.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    # mocking SMTP_SSL server
-    mock_smtp = mocker.MagicMock(name='blog.common.send_email.smtplib.SMTP_SSL')
-    mocker.patch('blog.common.send_email.smtplib.SMTP_SSL', new=mock_smtp)
-
-    response = client.post(
+    response = await client.post(
         url='/users/create',
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
         json=USER_DATA
     )
+
     # since we use context manager for create SMTP server we have to use __enter__
     assert mock_smtp.return_value.__enter__.return_value.sendmail.call_count == 1
 
@@ -47,7 +50,8 @@ def test_create_user_success(client, mocker) -> None:
     assert data['social_media_links'] == USER_DATA['social_media_links']
 
 
-def test_create_user_if_email_already_exist(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_create_user_if_email_already_exist(client: AsyncClient, create_multiple_users: list[User]) -> None:
     """
     Test create user if passed email was already registered by another user.
     """
@@ -55,7 +59,7 @@ def test_create_user_if_email_already_exist(client, create_multiple_users: list[
     # change email for user that will be created on email that had been already registered
     USER_DATA['email'] = create_multiple_users[0].email
 
-    response = client.post(
+    response = await client.post(
         url='/users/create',
         json=USER_DATA
     )
@@ -64,15 +68,17 @@ def test_create_user_if_email_already_exist(client, create_multiple_users: list[
     USER_DATA['email'] = current_email  # replace previous email to avoid errors
 
 
-def test_create_user_if_username_already_exist(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_create_user_if_username_already_exist(client: AsyncClient, create_multiple_users: list[User]) -> None:
     """
     Test create user if passed username was already registered by another user.
     """
     current_username = USER_DATA['username']
     # change email for user that will be created on email that had been already registered
     USER_DATA['username'] = create_multiple_users[1].username
+    USER_DATA['email'] = fake.ascii_email()
 
-    response = client.post(
+    response = await client.post(
         url='/users/create',
         json=USER_DATA
     )
@@ -81,39 +87,40 @@ def test_create_user_if_username_already_exist(client, create_multiple_users: li
     USER_DATA['username'] = current_username  # replace previous email to avoid errors
 
 
-def test_read_all_users_with_particular_scope(client,
-                                              user_for_token: User,
-                                              get_token: str,
-                                              create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_read_all_users_with_particular_scope(client: AsyncClient,
+                                                    db: AsyncSession,
+                                                    user_for_token: User,
+                                                    get_token: str,
+                                                    create_multiple_users: list[User],
+                                                    mock_redis) -> None:
     """
     Test read all users if user has appropriate access scope.
     """
-    response = client.get(
+    response = await client.get(
         url='/users/read_all',
         headers={'Authorization': f'Bearer {get_token}'}
     )
+
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
+
     assert len(response_data) == 3, 'Must be 3 users'
     assert isinstance(response_data, list), 'Must be list type'
-
-    user_data1 = response_data[0]
-    user_data2 = response_data[1]
-    user_data3 = response_data[2]
-    # compare already exist users info with info from response
-    assert UserShow(**jsonable_encoder(user_for_token)) == UserShow(**user_data1)
-    assert UserShow(**jsonable_encoder(create_multiple_users[0])) == UserShow(**user_data2)
-    assert UserShow(**jsonable_encoder(create_multiple_users[1])) == UserShow(**user_data3)
+    assert UserShow(**response_data[0]) == UserShow(**jsonable_encoder(user_for_token))
+    assert UserShow(**response_data[1]) == UserShow(**jsonable_encoder(create_multiple_users[0]))
+    assert UserShow(**response_data[2]) == UserShow(**jsonable_encoder(create_multiple_users[1]))
 
 
-def test_read_all_users_without_particular_scope(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_read_all_users_without_particular_scope(client: AsyncClient, create_multiple_users: list[User]) -> None:
     """
     Test try read all users if user has not appropriate access scope.
     """
-    # token withot needed scope
+    # token without needed scope
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
-    response = client.get(
+    response = await client.get(
         url='/users/read_all',
         headers={'Authorization': f'Bearer {token}'}
     )
@@ -122,11 +129,15 @@ def test_read_all_users_without_particular_scope(client, create_multiple_users: 
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_read_user_by_id_with_particular_scope(user_for_token: User, client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_read_user_by_id_with_particular_scope(user_for_token: User,
+                                                     client: AsyncClient,
+                                                     get_token: str,
+                                                     mock_redis) -> None:
     """
     Test read user by its id if user has appropriate access scope.
     """
-    response = client.get(
+    response = await client.get(
         url=f'users/read/{user_for_token.id}',
         headers={'Authorization': f'Bearer {get_token}'}
     )
@@ -137,16 +148,18 @@ def test_read_user_by_id_with_particular_scope(user_for_token: User, client, get
     assert UserShow(**response_data) == UserShow(**user_data)
 
 
-def test_read_user_by_id_without_particular_scope(user_for_token: User,
-                                                  create_multiple_users: list[User],
-                                                  client) -> None:
+@pytest.mark.anyio
+async def test_read_user_by_id_without_particular_scope(user_for_token: User,
+                                                        create_multiple_users: list[User],
+                                                        client: AsyncClient,
+                                                        mock_redis) -> None:
     """
     Test read user by its id if it has not appropriate access scope.
     """
     # token without needed scope
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
-    response = client.get(
+    response = await client.get(
         url=f'users/read/{user_for_token.id}',
         headers={'Authorization': f'Bearer {token}'}
     )
@@ -155,11 +168,12 @@ def test_read_user_by_id_without_particular_scope(user_for_token: User,
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_read_user_by_id_if_passed_wrong_user_id(get_token: str, client) -> None:
+@pytest.mark.anyio
+async def test_read_user_by_id_if_passed_wrong_user_id(get_token: str, client: AsyncClient, mock_redis) -> None:
     """
     Test read user by its id if was passed id that not matched in db.
     """
-    response = client.get(
+    response = await client.get(
         url='users/read/150',
         headers={'Authorization': f'Bearer {get_token}'}
     )
@@ -168,29 +182,43 @@ def test_read_user_by_id_if_passed_wrong_user_id(get_token: str, client) -> None
     assert response.json() == {'detail': 'User with passed id does not exists'}
 
 
-def test_read_users_me_if_user_is_active(user_for_token: User, client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_read_users_me_if_user_is_active(user_for_token: User,
+                                               client: AsyncClient,
+                                               get_token: str,
+                                               mock_redis) -> None:
     """
     Test read info about current authenticated user is active now,5
     and has appropriate scope for this action.
     """
-    response = client.get(
+    response = await client.get(
         url='users/me',
         headers={'Authorization': f'Bearer {get_token}'}
     )
 
     assert response.status_code == status.HTTP_200_OK
     user_data = jsonable_encoder(user_for_token)
-    # check response content
     assert UserShow(**response.json()) == UserShow(**user_data)
 
 
-def test_read_users_me_if_user_is_inactive(user_for_token: User, client, get_token: str, db) -> None:
+@pytest.mark.anyio
+async def test_read_users_me_if_user_is_inactive(user_for_token: User,
+                                                 client: AsyncClient,
+                                                 get_token: str,
+                                                 db: AsyncSession) -> None:
     """
     Test read info about current authenticated user is inactive.
     """
     # make user inactive
-    db.query(User).filter(User.id == user_for_token.id).update({'is_active': False})
-    response = client.get(
+    await db.execute(
+        update(User.__table__)
+        .where(User.id == User.id)
+        .values(**{'is_active': False})
+    )
+    await db.commit()
+    await db.refresh(user_for_token)
+
+    response = await client.get(
         url='users/me',
         headers={'Authorization': f'Bearer {get_token}'}
     )
@@ -199,14 +227,15 @@ def test_read_users_me_if_user_is_inactive(user_for_token: User, client, get_tok
     assert response.json() == {'detail': 'Inactive user. Activate your account in order to do this action'}
 
 
-def test_read_users_me_without_particular_scope(create_multiple_users: list[User], client) -> None:
+@pytest.mark.anyio
+async def test_read_users_me_without_particular_scope(create_multiple_users: list[User], client: AsyncClient) -> None:
     """
     Test read info about current authenticated user has not appropriate access scope.
     """
     # token without needed scope
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
-    response = client.get(
+    response = await client.get(
         url='users/me',
         headers={'Authorization': f'Bearer {token}'}
     )
@@ -215,13 +244,17 @@ def test_read_users_me_without_particular_scope(create_multiple_users: list[User
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_delete_me_with_particular_scope(user_for_token: User, client, get_token: str, db) -> None:
+@pytest.mark.anyio
+async def test_delete_me_with_particular_scope(user_for_token: User,
+                                               client: AsyncClient,
+                                               get_token: str,
+                                               db: AsyncSession) -> None:
     """
     Test delete current authenticated user if user has appropriate access scope.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
+    response = await client.delete(
         url='/users/delete/me',
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -230,11 +263,16 @@ def test_delete_me_with_particular_scope(user_for_token: User, client, get_token
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
-    db_user = db.get(User, user_for_token.id)
+    buffered_db_user = await db.execute(
+        select(User)
+        .where(User.id == user_for_token.id)
+    )
+    db_user = buffered_db_user.scalar()
     assert db_user is None, 'Current user must be deleted'
 
 
-def test_delete_me_without_particular_scope(create_multiple_users: list[User], client) -> None:
+@pytest.mark.anyio
+async def test_delete_me_without_particular_scope(create_multiple_users: list[User], client: AsyncClient) -> None:
     """
     Test delete current authenticated user if user has not appropriate access scope.
     """
@@ -243,7 +281,7 @@ def test_delete_me_without_particular_scope(create_multiple_users: list[User], c
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
+    response = await client.delete(
         url='/users/delete/me',
         headers={
             'Authorization': f'Bearer {token}',
@@ -255,7 +293,8 @@ def test_delete_me_without_particular_scope(create_multiple_users: list[User], c
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_delete_me_if_csrf_tokens_mismatch(create_multiple_users: list[User], client) -> None:
+@pytest.mark.anyio
+async def test_delete_me_if_csrf_tokens_mismatch(create_multiple_users: list[User], client: AsyncClient) -> None:
     """
     Test delete current authenticated user if csrf tokens in request header and client cookies are mismatch.
     """
@@ -264,7 +303,7 @@ def test_delete_me_if_csrf_tokens_mismatch(create_multiple_users: list[User], cl
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.delete(
+    response = await client.delete(
         url='/users/delete/me',
         headers={
             'Authorization': f'Bearer {token}',
@@ -276,13 +315,17 @@ def test_delete_me_if_csrf_tokens_mismatch(create_multiple_users: list[User], cl
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_delete_user_by_id_with_particular_scope(create_multiple_users: list[User], client, get_token: str, db) -> None:
+@pytest.mark.anyio
+async def test_delete_user_by_id_with_particular_scope(create_multiple_users: list[User],
+                                                       client: AsyncClient,
+                                                       get_token: str,
+                                                       db: AsyncSession) -> None:
     """
     Test delete user from database by `user_id` if user,
     which will delete has appropriate access scope.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    response = client.delete(
+    response = await client.delete(
         url=f'/users/delete/{create_multiple_users[0].id}',
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -291,11 +334,17 @@ def test_delete_user_by_id_with_particular_scope(create_multiple_users: list[Use
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
-    db_user = db.get(User, create_multiple_users[0].id)
+    buffered_db_user = await db.execute(
+        select(User)
+        .where(User.id == create_multiple_users[0].id)
+    )
+    db_user = buffered_db_user.scalar()
     assert db_user is None, f'User with id {create_multiple_users[0].id} must be deleted'
 
 
-def test_delete_user_by_id_without_particular_scope(create_multiple_users: list[User], client) -> None:
+@pytest.mark.anyio
+async def test_delete_user_by_id_without_particular_scope(create_multiple_users: list[User],
+                                                          client: AsyncClient) -> None:
     """
     Test delete user from database by `user_id`, if user,
     which will delete has not appropriate access scope.
@@ -304,7 +353,7 @@ def test_delete_user_by_id_without_particular_scope(create_multiple_users: list[
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    response = client.delete(
+    response = await client.delete(
         url=f'/users/delete/{create_multiple_users[1].id}',
         headers={
             'Authorization': f'Bearer {token}',
@@ -316,12 +365,13 @@ def test_delete_user_by_id_without_particular_scope(create_multiple_users: list[
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_delete_user_by_id_if_passed_wrong_user_id(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_delete_user_by_id_if_passed_wrong_user_id(client: AsyncClient, get_token: str) -> None:
     """
     Test delete user from database by `user_id`, if passed user id does not exist.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    response = client.delete(
+    response = await client.delete(
         url='/users/delete/150',
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -333,12 +383,15 @@ def test_delete_user_by_id_if_passed_wrong_user_id(client, get_token: str) -> No
     assert response.json() == {'detail': 'User with passed id does not exists'}
 
 
-def test_delete_user_by_id_if_csrf_tokens_mismatch(get_token: str, client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_delete_user_by_id_if_csrf_tokens_mismatch(get_token: str,
+                                                         client: AsyncClient,
+                                                         create_multiple_users: list[User]) -> None:
     """
     Test delete user from database by `user_id` if csrf tokens in request header and client cookies are mismatch.
     """
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    response = client.delete(
+    response = await client.delete(
         url=f'/users/delete/{create_multiple_users[1].id}',
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -350,7 +403,10 @@ def test_delete_user_by_id_if_csrf_tokens_mismatch(get_token: str, client, creat
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_update_user_info_with_particular_scope(client, get_token: str, user_for_token: User) -> None:
+@pytest.mark.anyio
+async def test_update_user_info_with_particular_scope(client: AsyncClient,
+                                                      get_token: str,
+                                                      user_for_token: User) -> None:
     """
     Test update info for current authenticated user if user has appropriate access scope.
     """
@@ -361,7 +417,7 @@ def test_update_user_info_with_particular_scope(client, get_token: str, user_for
     }
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.patch(
+    response = await client.patch(
         url='/users/me/update',
         headers={
             'Authorization': f'Bearer {get_token}',
@@ -375,7 +431,9 @@ def test_update_user_info_with_particular_scope(client, get_token: str, user_for
     assert user_for_token.date_of_birth == datetime.strptime(data_to_update['date_of_birth'], '%Y-%m-%d').date()
 
 
-def test_update_user_info_without_particular_scope(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_update_user_info_without_particular_scope(client: AsyncClient,
+                                                         create_multiple_users: list[User]) -> None:
     """
     Test update info for current authenticated user if user has not appropriate access scope.
     """
@@ -388,7 +446,7 @@ def test_update_user_info_without_particular_scope(client, create_multiple_users
     }
     client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.patch(
+    response = await client.patch(
         url='/users/me/update',
         headers={
             'Authorization': f'Bearer {token}',
@@ -401,7 +459,8 @@ def test_update_user_info_without_particular_scope(client, create_multiple_users
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_update_user_info_if_csrf_tokens_mismatch(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_update_user_info_if_csrf_tokens_mismatch(client: AsyncClient, create_multiple_users: list[User]) -> None:
     """
     Test update info for current authenticated user if csrf tokens in request header and client cookies are mismatch.
     """
@@ -414,7 +473,7 @@ def test_update_user_info_if_csrf_tokens_mismatch(client, create_multiple_users:
     }
     client.cookies.set(name='csrftoken', value='wrong_csrf_token')
 
-    response = client.patch(
+    response = await client.patch(
         url='/users/me/update',
         headers={
             'Authorization': f'Bearer {token}',
@@ -427,7 +486,11 @@ def test_update_user_info_if_csrf_tokens_mismatch(client, create_multiple_users:
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_reset_password_request_if_passed_username_success(client, user_for_token: User, mocker) -> None:
+@pytest.mark.anyio
+async def test_reset_password_request_if_passed_username_success(client: AsyncClient,
+                                                                 user_for_token:
+                                                                 User,
+                                                                 mock_smtp) -> None:
     """
     Test reset user's account password using username.
     """
@@ -435,11 +498,9 @@ def test_reset_password_request_if_passed_username_success(client, user_for_toke
         'username': user_for_token.username,
         'password': 'new_super_password'
     }
-    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    mock_smtp = mocker.MagicMock(name='blog.common.send_email.smtplib.SMTP_SSL')
-    mocker.patch('blog.common.send_email.smtplib.SMTP_SSL', new=mock_smtp)
 
-    response = client.post(
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    response = await client.post(
         url='/users/reset_password',
         json=data_to_reset,
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
@@ -454,7 +515,10 @@ def test_reset_password_request_if_passed_username_success(client, user_for_toke
     }
 
 
-def test_reset_password_request_if_passed_email_success(client, user_for_token: User, mocker) -> None:
+@pytest.mark.anyio
+async def test_reset_password_request_if_passed_email_success(client: AsyncClient,
+                                                              user_for_token: User,
+                                                              mock_smtp) -> None:
     """
     Test reset user's account password using email.
     """
@@ -462,11 +526,9 @@ def test_reset_password_request_if_passed_email_success(client, user_for_token: 
         'email': user_for_token.email,
         'password': 'new_super_password'
     }
-    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
-    mock_smtp = mocker.MagicMock(name='blog.common.send_email.smtplib.SMTP_SSL')
-    mocker.patch('blog.common.send_email.smtplib.SMTP_SSL', new=mock_smtp)
 
-    response = client.post(
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    response = await client.post(
         url='/users/reset_password',
         json=data_to_reset,
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
@@ -481,16 +543,17 @@ def test_reset_password_request_if_passed_email_success(client, user_for_token: 
     }
 
 
-def test_reset_password_if_was_not_passed_required_data(client) -> None:
+@pytest.mark.anyio
+async def test_reset_password_if_was_not_passed_required_data(client: AsyncClient) -> None:
     """
     Test reset user's account password, when was not passed email or username.
     """
     data_to_reset = {
         'password': 'new_super_password'
     }
-    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
 
-    response = client.post(
+    client.cookies.set(name='csrftoken', value=TEST_CSRF_TOKEN)
+    response = await client.post(
         url='/users/reset_password',
         json=data_to_reset,
         headers={'X-CSRFToken': TEST_CSRF_TOKEN},
@@ -500,7 +563,8 @@ def test_reset_password_if_was_not_passed_required_data(client) -> None:
     assert response.json() == {'detail': 'You must provide either username or email for reset password'}
 
 
-def test_confirm_reset_password_success(client, user_for_token: User) -> None:
+@pytest.mark.anyio
+async def test_confirm_reset_password_success(client: AsyncClient, user_for_token: User) -> None:
     """
     Test check if user's account password will really change
     after user will follow link for password reset.
@@ -510,14 +574,15 @@ def test_confirm_reset_password_success(client, user_for_token: User) -> None:
                 f'{urlsafe_b64encode(user_for_token.username.encode("utf-8")).decode("utf-8")}')
     token = token_generator.make_token(user_for_token)
 
-    response = client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+    response = await client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {'detail': 'Password has been changed successfully'}
     assert user_for_token.hashed_password != old_user_password, 'Password must be changed'
 
 
-def test_confirm_reset_password_fail(client, user_for_token: User) -> None:
+@pytest.mark.anyio
+async def test_confirm_reset_password_fail(client: AsyncClient, user_for_token: User) -> None:
     """
     Test check when link for password reset confirm is invalid after it has been already used
     or its lifetime has been expired.
@@ -527,8 +592,8 @@ def test_confirm_reset_password_fail(client, user_for_token: User) -> None:
                 f'{urlsafe_b64encode(user_for_token.username.encode("utf-8")).decode("utf-8")}')
     token = token_generator.make_token(user_for_token)
     # mock request for attempting to confirm reset password
-    client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
-    response2 = client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+    await client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+    response2 = await client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
 
     assert response2.status_code == status.HTTP_200_OK
     assert response2.json() == {'detail': 'Activation link is invalid!'}
@@ -539,13 +604,14 @@ def test_confirm_reset_password_fail(client, user_for_token: User) -> None:
                     f'{urlsafe_b64encode(user_for_token.username.encode("utf-8")).decode("utf-8")}')
         token = token_generator.make_token(user_for_token)
         sleep(1)  # do some delay in order to pass test (in debug mode this delay is no necessary)
-        response = client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
+        response = await client.get(url=f'/users/confirm_reset_password/{uid_pass}/{token}')
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {'detail': 'Activation link is invalid!'}
 
 
-def test_login_with_token_success(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_login_with_token_success(client: AsyncClient, create_multiple_users: list[User]) -> None:
     """
     Test get access token with scope.
     """
@@ -557,7 +623,7 @@ def test_login_with_token_success(client, create_multiple_users: list[User]) -> 
         'scope': 'posts:read'
     }
 
-    response = client.post(
+    response = await client.post(
         url='/users/login_with_token',
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         data=form_data
@@ -567,7 +633,6 @@ def test_login_with_token_success(client, create_multiple_users: list[User]) -> 
     response_data = response.json()
     assert 'access_token' in response_data and 'token_type' in response_data
     assert response_data['token_type'] == 'bearer'
-    assert response_data['detail'] == f'Access token was made on username `{user_for_token.username}`'
     # check data from token (scopes and username)
     token_data = get_token_data(response_data['access_token'])
     assert token_data.username == user_for_token.username
@@ -576,7 +641,8 @@ def test_login_with_token_success(client, create_multiple_users: list[User]) -> 
     assert 'csrftoken' in response.cookies, 'Must be csrftoken in the cookies'
 
 
-def test_login_with_token_if_passed_user_not_found(client) -> None:
+@pytest.mark.anyio
+async def test_login_with_token_if_passed_user_not_found(client: AsyncClient) -> None:
     """
     Test get access token if user with passed username is not exists.
     """
@@ -586,7 +652,7 @@ def test_login_with_token_if_passed_user_not_found(client) -> None:
         'scope': 'posts:read'
     }
 
-    response = client.post(
+    response = await client.post(
         url='/users/login_with_token',
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         data=form_data
@@ -596,11 +662,59 @@ def test_login_with_token_if_passed_user_not_found(client) -> None:
     assert response.json() == {'detail': 'User with passed id does not exists'}
 
 
-def test_get_user_posts_without_filter(client, get_token: str, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_logout_success(client: AsyncClient, user_for_token: User) -> None:
+    """
+    Test successfully logging out user from system and deleting CSRF token from its client.
+    """
+    # authenticating
+    form_data = {
+        'username': user_for_token.username,
+        'password': USER_DATA['password'],
+        'scope': 'me:read'
+    }
+
+    response = await client.post(
+        url='/users/login_with_token',
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        data=form_data
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert client.cookies.get('csrftoken') is not None
+
+    # loging out
+    response = await client.get(
+        url='/users/logout',
+        headers={'Authorization': f'Bearer {response.json()["access_token"]}'}
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {'detail': f'You ({user_for_token.username}) successfully logged out from the system'}
+    assert client.cookies.get('csrftoken') is None
+
+
+@pytest.mark.anyio
+async def test_logout_fail(client: AsyncClient, user_for_token: User) -> None:
+    """
+    Test logging out user from the system when user is not authenticated.
+    """
+    response = await client.get(url='/users/logout')
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json() == {"detail": "Not authenticated"}
+    assert client.cookies.get('csrftoken') is None
+
+
+@pytest.mark.anyio
+async def test_get_user_posts_without_filter(client: AsyncClient,
+                                             get_token: str,
+                                             create_posts_for_user: list[Post],
+                                             mock_redis) -> None:
     """
     Test get all posts, which were written by current authenticated user without using filter.
     """
-    response = client.get(
+    response = await client.get(
         url='/users/me/posts',
         headers={'Authorization': f'Bearer {get_token}'},
         params={'apply_filter': False}
@@ -608,6 +722,7 @@ def test_get_user_posts_without_filter(client, get_token: str, create_posts_for_
 
     assert response.status_code == status.HTTP_200_OK
     response_data = response.json()
+    assert len(response_data) == 2, 'Must be 2 posts'
     existed_post1_data = jsonable_encoder(create_posts_for_user[0])
     existed_post2_data = jsonable_encoder(create_posts_for_user[1])
     # check whether response post data equal data of already created posts
@@ -615,11 +730,15 @@ def test_get_user_posts_without_filter(client, get_token: str, create_posts_for_
     assert UserPostsShow(**response_data[1]) == UserPostsShow(**existed_post2_data)
 
 
-def test_get_user_posts_with_filter(client, get_token: str, create_posts_for_user: list[Post]) -> None:
+@pytest.mark.anyio
+async def test_get_user_posts_with_filter(client: AsyncClient,
+                                          get_token: str,
+                                          create_posts_for_user: list[Post],
+                                          mock_redis) -> None:
     """
     Test get all posts, which were written by current authenticated user with using filter.
     """
-    response = client.get(
+    response = await client.get(
         url='/users/me/posts',
         headers={'Authorization': f'Bearer {get_token}'},
         params={
@@ -639,7 +758,7 @@ def test_get_user_posts_with_filter(client, get_token: str, create_posts_for_use
     assert UserPostsShow(**jsonable_encoder(create_posts_for_user[1])) == UserPostsShow(
         **post_data), 'Must be only second post'
 
-    response = client.get(
+    response = await client.get(
         url='/users/me/posts',
         headers={'Authorization': f'Bearer {get_token}'},
         params={
@@ -656,7 +775,8 @@ def test_get_user_posts_with_filter(client, get_token: str, create_posts_for_use
     assert len(response_data) == 2, 'Must be two posts'
 
 
-def test_get_user_posts_without_particular_scope(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_get_user_posts_without_particular_scope(client: AsyncClient, create_multiple_users: list[User]) -> None:
     """
     Test get all posts, which were written by current authenticated,
     if user has not appropriate access scope.
@@ -664,7 +784,7 @@ def test_get_user_posts_without_particular_scope(client, create_multiple_users: 
     # token without needed scope
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
-    response = client.get(
+    response = await client.get(
         url='/users/me/posts',
         headers={'Authorization': f'Bearer {token}'},
         params={'apply_filter': False}
@@ -674,13 +794,14 @@ def test_get_user_posts_without_particular_scope(client, create_multiple_users: 
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_get_users_comment_with_particular_scope(client,
-                                                 create_comments_to_posts_for_user: list[Comment],
-                                                 get_token: str) -> None:
+@pytest.mark.anyio
+async def test_get_users_comment_with_particular_scope(client: AsyncClient,
+                                                       create_comments_to_posts_for_user: list[Comment],
+                                                       get_token: str) -> None:
     """
     Test get all posts of current authenticated user is user has appropriate access scope.
     """
-    response = client.get(
+    response = await client.get(
         url='/users/me/comments',
         headers={'Authorization': f'Bearer {get_token}'},
         params={'rate_status': 'all'}
@@ -696,14 +817,16 @@ def test_get_users_comment_with_particular_scope(client,
         **jsonable_encoder(create_comments_to_posts_for_user[1]))
 
 
-def test_get_users_comment_without_particular_scope(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_get_users_comment_without_particular_scope(client: AsyncClient,
+                                                          create_multiple_users: list[User]) -> None:
     """
     Test get all posts of current authenticated user if user has not appropriate access scope.
     """
     # token without needed scope
     token = create_access_token(data={'sub': create_multiple_users[0].username, 'scopes': ['random:scope']},
                                 expires_delta=timedelta(minutes=5))
-    response = client.get(
+    response = await client.get(
         url='/users/me/comments',
         headers={'Authorization': f'Bearer {token}'},
         params={'rate_status': 'all'}
@@ -713,7 +836,10 @@ def test_get_users_comment_without_particular_scope(client, create_multiple_user
     assert response.json() == {'detail': 'Not enough permissions'}
 
 
-def test_create_user_photo_with_particular_scope(client, get_token: str, user_for_token: User) -> None:
+@pytest.mark.anyio
+async def test_create_user_photo_with_particular_scope(client: AsyncClient,
+                                                       get_token: str,
+                                                       user_for_token: User) -> None:
     """
     Test create current user's photo, if user has appropriate access scope.
     """
@@ -721,7 +847,7 @@ def test_create_user_photo_with_particular_scope(client, get_token: str, user_fo
     # define parent directory path for the file `avatar.png` (for possibility using relative path)
     parent_dir_path = os.path.dirname(os.path.realpath(__file__))
     with open(f'{parent_dir_path}/avatar.png', 'rb') as image:
-        response = client.post(
+        response = await client.post(
             url='/users/upload_user_image',
             headers={
                 'Authorization': f'Bearer {get_token}',
@@ -737,7 +863,8 @@ def test_create_user_photo_with_particular_scope(client, get_token: str, user_fo
     shutil.rmtree(f'{USER_IMAGES_DIR_PATH}{user_for_token.username}')
 
 
-def test_create_user_photo_if_csrf_tokens_mismatch(client, get_token: str) -> None:
+@pytest.mark.anyio
+async def test_create_user_photo_if_csrf_tokens_mismatch(client: AsyncClient, get_token: str) -> None:
     """
     Test create current user's photo, if csrf tokens in request header and client cookies are mismatch.
     """
@@ -745,7 +872,7 @@ def test_create_user_photo_if_csrf_tokens_mismatch(client, get_token: str) -> No
     # define parent directory path for the file `avatar.png` (for possibility using relative path)
     parent_dir_path = os.path.dirname(os.path.realpath(__file__))
     with open(f'{parent_dir_path}/avatar.png', 'rb') as image:
-        response = client.post(
+        response = await client.post(
             url='/users/upload_user_image',
             headers={
                 'Authorization': f'Bearer {get_token}',
@@ -758,7 +885,9 @@ def test_create_user_photo_if_csrf_tokens_mismatch(client, get_token: str) -> No
     assert response.json() == {'detail': 'CSRF token missing or incorrect'}
 
 
-def test_create_user_photo_without_particular_scope(client, create_multiple_users: list[User]) -> None:
+@pytest.mark.anyio
+async def test_create_user_photo_without_particular_scope(client: AsyncClient,
+                                                          create_multiple_users: list[User]) -> None:
     """
     Test create current user's photo, if user has not appropriate access scope.
     """
@@ -768,7 +897,7 @@ def test_create_user_photo_without_particular_scope(client, create_multiple_user
     # define parent directory path for the file `avatar.png` (for possibility using relative path)
     parent_dir_path = os.path.dirname(os.path.realpath(__file__))
     with open(f'{parent_dir_path}/avatar.png', 'rb') as image:
-        response = client.post(
+        response = await client.post(
             url='/users/upload_user_image',
             headers={
                 'Authorization': f'Bearer {token}',

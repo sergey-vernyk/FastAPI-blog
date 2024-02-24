@@ -1,77 +1,110 @@
 import os
-from datetime import timedelta
-from typing import Generator
+from datetime import timedelta, datetime
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import Session
-from sqlalchemy_utils.functions import create_database, database_exists
+from faker import Faker
+from faker.providers import person
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+from httpx import AsyncClient
+from sqlalchemy import update, URL
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine, AsyncSession
+from sqlalchemy_utils import create_database, database_exists
 
 from accounts.models import User
 from common.security import get_password_hash, create_access_token
+from common.utils import endpoint_cache_key_builder
 from config import get_settings
 from db_connection import Base
-from dependencies import get_db
-from dependencies import oauth2_scheme
+from dependencies import get_db, oauth2_scheme
 from main import app
 from posts.models import Post, Category, Comment
 from settings.env_dirs import LOGS_DIRECTORY
 
 settings = get_settings()
+fake = Faker()
+Faker.seed(0)
+fake.add_provider(person)
 
-SQLALCHEMY_DATABASE_URL = settings.database_url_test
-
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+SQLALCHEMY_DATABASE_URL = settings.database_url_test_async
 
 USER_DATA = {
-    'username': 'test_user',
-    'first_name': 'Test',
-    'last_name': 'User',
+    'username': fake.user_name(),
+    'first_name': fake.first_name_female(),
+    'last_name': fake.last_name_female(),
     'gender': 'female',
-    'email': 'example@example.com',
+    'email': fake.ascii_email(),
     'password': 'strong_password',
-    'date_of_birth': '1990-12-09',
+    'date_of_birth': datetime.strftime(fake.date_of_birth(), '%Y-%m-%d'),
     'social_media_links': ['https://facebook.com/users/id=2814984891498911829']
 }
 
 
+def create_db(url: URL) -> None:
+    """
+    Creates database when was passed `url`,
+    which contains driver for asynchronous interaction with database.
+    """
+    dialect = url.get_dialect(_is_async=True)
+    url = f'{dialect.name}://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}'
+    create_database(url)
+
+
+def is_exists_db(url: URL) -> bool:
+    """
+    Check whether database exists when was passed `url`,
+    which contains driver for asynchronous interaction with database.
+    """
+    dialect = url.get_dialect(_is_async=True)
+    url = f'{dialect.name}://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}'
+    return database_exists(url)
+
+
 @pytest.fixture(scope='session')
-def db_engine() -> Generator[Engine, None, None]:
+def anyio_backend():
+    """
+    Define own anyio_backend fixture because
+    the default anyio_backend fixture is function scoped
+    """
+    return 'asyncio'
+
+
+@pytest.fixture(scope='session')
+async def db_engine(anyio_backend):
     """
     Create database and tables in it, yield this database,
     and remove all tables after all tests will be executed.
     """
-    eng = create_engine(SQLALCHEMY_DATABASE_URL)
-    if not database_exists(eng.url):
-        create_database(eng.url)
-
-    Base.metadata.create_all(bind=eng)
+    eng = create_async_engine(SQLALCHEMY_DATABASE_URL)
+    async with eng.begin() as connection:
+        if not is_exists_db(eng.url):
+            create_db(eng.url)
+        await connection.run_sync(Base.metadata.create_all)
 
     yield eng
 
-    Base.metadata.drop_all(bind=eng)
+    async with eng.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
+        await eng.dispose()
     clean_log_files_content(LOGS_DIRECTORY)
 
 
 @pytest.fixture(scope='function')
-def db(db_engine: Engine):
+async def db(db_engine: AsyncEngine):
     """
     Returns session for test database and close database connection
     after all test will be executed.
     """
-    connection = db_engine.connect()
-    connection.begin()
-    test_db = Session(bind=connection)
+    async with db_engine.begin() as connection:
+        test_db = AsyncSession(bind=connection, expire_on_commit=False)
 
-    yield test_db
-
-    test_db.rollback()
-    connection.close()
+        yield test_db
+        await test_db.rollback()
+    await connection.close()
 
 
 @pytest.fixture(scope='function')
-def client(db: Session):
+async def client(db: AsyncSession):
     """
     Override dependency for using test database instead of main database
     and create test client for testing api.
@@ -79,31 +112,39 @@ def client(db: Session):
     """
     app.dependency_overrides[get_db] = lambda: db
 
-    with TestClient(app) as c:
-        yield c
+    async with AsyncClient(app=app, base_url='http://test') as ac:
+        yield ac
+    await ac.aclose()
 
 
 @pytest.fixture(scope='function')
-def user_for_token(db: Session):
+async def user_for_token(db: AsyncSession):
     """
     Returns user which will be used as current authenticated user,
     and which will has an access token.
     """
     user = User(
-        email=USER_DATA['email'],
+        email=fake.unique.ascii_email(),
         hashed_password=get_password_hash(USER_DATA['password']),
-        first_name=USER_DATA['first_name'],
-        last_name=USER_DATA['last_name'],
-        gender=USER_DATA['gender'],
-        username=USER_DATA['username'],
-        date_of_birth=USER_DATA['date_of_birth']
+        first_name=fake.first_name_male(),
+        last_name=fake.last_name_male(),
+        gender='male',
+        username=fake.unique.first_name_male().lower(),
+        date_of_birth=datetime.strptime(USER_DATA['date_of_birth'], '%Y-%m-%d')
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     # make user's account active,
-    # since after creating it is inactive by default until user will active it
-    db.query(User).filter(User.id == user.id).update({'is_active': True})
+    # since after creating it is inactive by default until user will activate it
+    statement = (
+        update(User.__table__)
+        .where(User.id == user.id)
+        .values(**{'is_active': True})
+    )
+    await db.execute(statement)
+    await db.commit()
+    await db.refresh(user)
     yield user
 
 
@@ -119,49 +160,58 @@ def get_token(user_for_token: User):
 
 
 @pytest.fixture(scope='function')
-def create_multiple_users(db: Session):
+async def create_multiple_users(db: AsyncSession):
     """
     Create 2 users and return them.
     """
     user1 = User(
-        email='example1@example.com',
+        email=fake.ascii_email(),
         hashed_password=get_password_hash('password1'),
-        first_name='name1',
-        last_name='surname1',
+        first_name=fake.first_name_male(),
+        last_name=fake.last_name_female(),
         gender='male',
-        username='user1',
-        date_of_birth='1965-10-15'
+        username=fake.user_name(),
+        date_of_birth=datetime.strptime('1965-10-15', '%Y-%m-%d').date()
     )
     user2 = User(
-        email='example2@example.com',
+        email=fake.ascii_email(),
         hashed_password=get_password_hash('password2'),
-        first_name='name2',
-        last_name='surname2',
+        first_name=fake.first_name_male(),
+        last_name=fake.last_name_female(),
         gender='female',
-        username='user2',
-        date_of_birth='1978-05-10'
+        username=fake.user_name(),
+        date_of_birth=datetime.strptime('1978-05-10', '%Y-%m-%d').date()
     )
     db.add_all([user1, user2])
-    db.commit()
+    await db.commit()
+    await db.refresh(user1)
+    await db.refresh(user2)
     # make users account active,
-    # since after creating it is inactive by default until user will active it
-    for u in (user1, user2):
-        db.query(User).filter(User.id == u.id).update({'is_active': True})
+    # since after creating it is inactive by default until user will activate it
+    statement = (
+        update(User.__table__)
+        .where(User.id.in_([user1.id, user2.id]))
+        .values(**{'is_active': True})
+    )
+    await db.execute(statement)
+    await db.commit()
+    await db.refresh(user1)
+    await db.refresh(user2)
     yield [user1, user2]
 
 
 @pytest.fixture(scope='function')
-def create_posts_for_user(user_for_token: User, db: Session):
+async def create_posts_for_user(user_for_token: User, db: AsyncSession):
     """
     Create posts for current authenticated user and return them.
     """
-    post_category = Category(name='post_category')
+    post_category = Category(name=fake.unique.first_name())
     db.add(post_category)
-    db.commit()
-    db.refresh(post_category)
+    await db.commit()
+    await db.refresh(post_category)
 
     post1 = Post(
-        title='post_title1',
+        title=fake.unique.sentence(nb_words=50),
         body='post_body1',
         tags=['tag1', 'tag2'],
         rating=3,
@@ -170,7 +220,7 @@ def create_posts_for_user(user_for_token: User, db: Session):
         owner_id=user_for_token.id
     )
     post2 = Post(
-        title='post_title2',
+        title=fake.unique.sentence(nb_words=50),
         body='post_body2',
         tags=['tag5', 'tag6', 'tag3', 'tag2'],
         rating=4,
@@ -178,15 +228,16 @@ def create_posts_for_user(user_for_token: User, db: Session):
         category_id=post_category.id,
         owner_id=user_for_token.id
     )
+
     db.add_all([post1, post2])
-    db.commit()
-    db.refresh(post1)
-    db.refresh(post2)
+    await db.commit()
+    await db.refresh(post1)
+    await db.refresh(post2)
     yield [post1, post2]
 
 
 @pytest.fixture(scope='function')
-def create_comments_to_posts_for_user(db: Session, create_posts_for_user: list[Post]):
+async def create_comments_to_posts_for_user(db: AsyncSession, create_posts_for_user: list[Post]):
     """
     Create comments for posts, owner of which is current authenticated user.
     """
@@ -209,22 +260,22 @@ def create_comments_to_posts_for_user(db: Session, create_posts_for_user: list[P
     )
 
     db.add_all([comment1, comment2, comment3])
-    db.commit()
-    db.refresh(comment1)
-    db.refresh(comment2)
-    db.refresh(comment3)
+    await db.commit()
+    await db.refresh(comment1)
+    await db.refresh(comment2)
+    await db.refresh(comment3)
     yield [comment1, comment2, comment3]
 
 
 @pytest.fixture(scope='function')
-def create_post_category(db: Session):
+async def create_post_category(db: AsyncSession):
     """
     Create category for posts.
     """
-    category = Category(name='Category name')
+    category = Category(name=fake.unique.first_name())
     db.add(category)
-    db.commit()
-    db.refresh(category)
+    await db.commit()
+    await db.refresh(category)
     yield category
 
 
@@ -237,3 +288,27 @@ def clean_log_files_content(path: str) -> None:
             if os.path.isfile(p):
                 with open(p, 'w', encoding='utf-8') as file:
                     file.truncate(0)
+
+
+@pytest.fixture(scope='function')
+def mock_redis(mocker):
+    """
+    Mock Redis instance for cache.
+    """
+    mock_redis = mocker.MagicMock(name='blog.main.aioredis')
+    mocker.patch('blog.main.aioredis', new=mock_redis)
+
+    FastAPICache.init(RedisBackend(mock_redis), prefix='fastapi-cache', key_builder=endpoint_cache_key_builder)
+
+    yield mock_redis
+
+
+@pytest.fixture(scope='function')
+def mock_smtp(mocker):
+    """
+    Mock SMTP server to send emails.
+    """
+    mock_smtp = mocker.MagicMock(name='blog.common.send_email.smtplib.SMTP_SSL')
+    mocker.patch('blog.common.send_email.smtplib.SMTP_SSL', new=mock_smtp)
+
+    yield mock_smtp

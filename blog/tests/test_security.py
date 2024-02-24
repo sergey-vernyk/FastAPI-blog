@@ -1,8 +1,11 @@
 from datetime import datetime, timedelta
 
+import pytest
 from fastapi import HTTPException, status
 from jose import jwt
 from pytest import raises
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts.models import User
 from accounts.schemas import TokenData
@@ -88,7 +91,7 @@ class TestLimitedLifeTokenGenerator:
 
     def test_check_token_success(self, user_for_token) -> None:
         """
-        Test check generated token if there was no conditions
+        Test check generated token if there were no conditions
         to change hash value which token contains.
         """
         token = self.token_generator.make_token(user_for_token)
@@ -105,13 +108,20 @@ class TestLimitedLifeTokenGenerator:
         result = self.token_generator.check_token(user_for_token, token)
         assert result is False
 
-    def test_check_token_if_changed_hash_value(self, user_for_token, db) -> None:
+    @pytest.mark.anyio
+    async def test_check_token_if_changed_hash_value(self, user_for_token, db: AsyncSession) -> None:
         """
         Test check generated token when it has been changed i.e. when has been changed token's hash value.
         User's data could has been changed (e.g. password, email, last login timestamp etc.)
         """
         token = self.token_generator.make_token(user_for_token)
         new_password = get_password_hash('new_strong_password')
-        db.query(User).filter(User.id == user_for_token.id).update({'hashed_password': new_password})
+        await db.execute(
+            update(User.__table__)
+            .where(User.id == user_for_token.id)
+            .values(**{'hashed_password': new_password})
+        )
+        await db.commit()
+        await db.refresh(user_for_token)
         result = self.token_generator.check_token(user_for_token, token)
         assert result is False

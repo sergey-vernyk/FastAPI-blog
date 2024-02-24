@@ -1,5 +1,5 @@
-from sqlalchemy import func, select, desc
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select, desc, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from accounts.models import User
@@ -11,8 +11,13 @@ async def get_post_by_id_query(post_id: int) -> Select:
     """
     Get post by its `post_id`.
     """
-    return select(Post, func.count(Comment.id).label('count_comments')).join(
-        Category).outerjoin(Comment).filter(Post.id == post_id).group_by(Post.id)
+    return (
+        select(Post, func.count(Comment.id).label('count_comments'))
+        .join(Category)
+        .outerjoin(Comment)
+        .filter(Post.id == post_id)
+        .group_by(Post.id)
+    )
 
 
 async def get_posts_query(category: str,
@@ -31,24 +36,41 @@ async def get_posts_query(category: str,
         'rating_desc': desc(Post.rating),
         'post_comments_desc': desc(func.count(Post.comments).label('post_comments'))
     }
-    return select(Post, func.count(Comment.id).label('count_comments')).join(Category).outerjoin(
-        Comment).filter(Category.name.icontains(category)).group_by(
-        Post.id).order_by(sort_conditions[sort_by]).offset(skip).limit(limit)
+    return (
+        select(Post, func.count(Comment.id).label('count_comments'))
+        .join(Category)
+        .outerjoin(Comment)
+        .filter(Category.name.icontains(category))
+        .group_by(Post.id)
+        .order_by(sort_conditions[sort_by])
+        .offset(skip)
+        .limit(limit)
+    )
 
 
-async def update_post_query(db: Session, post: Post, data_to_update: dict) -> Select:
+async def update_post_query(db: AsyncSession, post: Post, data_to_update: dict) -> Select:
     """
     Update post with passed parameters and return query with the post along extra data.
     """
-    db.query(Post).filter(Post.id == post.id).update(data_to_update)
-    db.commit()
+    statement = (
+        update(Post.__table__)
+        .where(Post.id == post.id)
+        .values(**data_to_update)
+    )
+    await db.execute(statement)
+    await db.commit()
     # invalidate cache after post's data has been updated
     invalidate_endpoint_cache.delay(namespace=Post.__tablename__, request_method='get')
-    return select(Post, func.count(Comment.id).label('count_comments')).join(
-        Category).outerjoin(Comment).filter(Post.id == post.id).group_by(Post.id)
+    return (
+        select(Post, func.count(Comment.id).label('count_comments'))
+        .join(Category)
+        .outerjoin(Comment)
+        .filter(Post.id == post.id)
+        .group_by(Post.id)
+    )
 
 
-async def set_like_or_dislike_for_comment(db: Session, user: User, comment: Comment, action: str) -> Comment:
+async def set_like_or_dislike_for_comment(db: AsyncSession, user: User, comment: Comment, action: str) -> Comment:
     """
     Set comment with `comment_id` as liked/disliked by `user`.
     """
@@ -75,8 +97,8 @@ async def set_like_or_dislike_for_comment(db: Session, user: User, comment: Comm
             comment.dislikes.append(user)  # set `dislike`
 
     db.add(comment)
-    db.commit()
-    db.refresh(comment)
+    await db.commit()
+    await db.refresh(comment)
     # invalidate cache after comment's data has been updated
     invalidate_endpoint_cache.delay(namespace=Comment.__tablename__, request_method='get')
     return comment

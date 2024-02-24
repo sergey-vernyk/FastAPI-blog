@@ -2,11 +2,11 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Union, Annotated
 
+import bcrypt
 from fastapi import HTTPException, status
 from fastapi.param_functions import Form
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
-from passlib.context import CryptContext
 
 from accounts.schemas import TokenData
 from config import get_settings
@@ -19,22 +19,19 @@ DEFAULT_ACCESS_SCOPES = (
 
 settings = get_settings()
 
-# for hashing and verifying passwords
-pwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
-
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Check whether `plain_password` against an `hashed_password`.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 
 def get_password_hash(password: str) -> str:
     """
     Returns hash from the passed plain `password`.
     """
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None) -> str:

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from accounts.schemas import UserShowBriefly
 
@@ -22,6 +22,8 @@ class PostShowBriefly(BaseModel):
     id: int
     title: str
     tags: List[str]
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Category(BaseModel):
@@ -68,6 +70,8 @@ class UserPostsShow(BaseModel):
     created: datetime
     updated: datetime
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class CommentCreateOrUpdate(BaseModel):
     """
@@ -87,6 +91,8 @@ class CommentShow(CommentCreateOrUpdate):
     dislikes: list[UserShowBriefly]
     created: datetime
     updated: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PostShow(BaseModel):
@@ -111,8 +117,7 @@ class PostShow(BaseModel):
     count_comments: int = 0
     comments: list[CommentShow] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCommentsShow(BaseModel):
@@ -120,9 +125,12 @@ class UserCommentsShow(BaseModel):
     Info for displaying comments that related to particular user.
     """
 
+    id: int
     post: PostShowBriefly
     body: str
     likes: list[UserShowBriefly]
     dislikes: list[UserShowBriefly]
     created: datetime
     updated: datetime
+
+    model_config = ConfigDict(from_attributes=True)

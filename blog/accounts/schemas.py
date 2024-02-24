@@ -1,13 +1,14 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, HttpUrl, EmailStr
+from pydantic import BaseModel, Field, HttpUrl, EmailStr, ConfigDict
 
 
 class UserCreate(BaseModel):
     """
     Data (attributes) needed for creation user.
     """
+
     username: str = Field(max_length=30)
     first_name: str = Field(max_length=50)
     last_name: Optional[str] = Field(max_length=50, default=None)
@@ -40,18 +41,14 @@ class UserShow(BaseModel):
     about: str | None
     social_media_links: list[str] | None
 
-    class Config:
-        """
-        Tell the Pydantic model to read the data even if it is not a dict,
-        but an ORM model (or any other arbitrary object with attributes).
-        """
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserUpdate(BaseModel):
     """
     Info for update user.
     """
+
     username: Optional[str] = Field(max_length=30, default=None)
     first_name: Optional[str] = Field(max_length=50, default=None)
     last_name: Optional[str] = Field(max_length=50, default=None)
@@ -69,6 +66,7 @@ class UserShowBriefly(BaseModel):
     """
     Info about users, which are in likes and dislikes lists.
     """
+
     id: int
     username: str
 
@@ -77,6 +75,7 @@ class ResetUserPassword(BaseModel):
     """
     Info for reset forgotten user's password.
     """
+
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     password: str = Field(min_length=10)
@@ -86,6 +85,7 @@ class Token(BaseModel):
     """
     Define data types for token.
     """
+
     access_token: str
     token_type: str
 
@@ -94,5 +94,6 @@ class TokenData(BaseModel):
     """
     Data for get username and scopes from passed token.
     """
+
     username: str | None = None
     scopes: list[str] = []

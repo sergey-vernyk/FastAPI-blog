@@ -5,18 +5,19 @@ from fastapi import Depends, HTTPException, Security, Cookie, Header, status
 from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 from jose import JWTError, jwt
 from pydantic import ValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts import models
 from accounts.schemas import TokenData
-from common.crud_operations import CrudManager
+from common.crud_operations import CrudManagerAsync
 from config import Settings, get_settings
-from db_connection import SessionLocal
+from db_connection import SessionAsyncLocal
 
 settings = get_settings()
 # for authentication using Bearer Token obtained with a password
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f'/api/v{settings.api_version}/users/login_with_token',
+    scheme_name='JWT',
     scopes={
         'post:create': 'Write a new post',
         'category:create': 'Create a new category for posts',
@@ -41,23 +42,23 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
-def get_db():
+async def get_db():
     """
-    Dependency will create a new SQLAlchemy `SessionLocal`
-    that will be used in a single request, and then close it once the request is finished.
+    Creates a new SQLAlchemy AsyncSession instance
+    that will be used in a single request.
     """
-    with SessionLocal() as db:
+    async with SessionAsyncLocal() as db:
         yield db
 
 
-DatabaseDependency = Annotated[Session, Depends(get_db)]
+DatabaseDependency = Annotated[AsyncSession, Depends(get_db)]
 
 
 async def get_current_user(security_scopes: SecurityScopes,
                            token: Annotated[str, Depends(oauth2_scheme)],
                            db: DatabaseDependency) -> models.User:
     """
-    Obtain current user by passed `token`. Used as dependency.
+    Obtain current user by passed `token`.
     """
     if security_scopes.scopes:
         authenticate_value = f'Bearer scope="{security_scopes.scope_str}"'
@@ -78,7 +79,7 @@ async def get_current_user(security_scopes: SecurityScopes,
         token_data = TokenData(username=username, scopes=token_scopes)
     except (JWTError, ValidationError):
         raise credentials_exception
-    user = await CrudManager(db, models.User).retrieve(models.User.username == token_data.username)
+    user = await CrudManagerAsync(db, models.User).retrieve(models.User.username == token_data.username)
     if user is None:
         raise credentials_exception
     if not user.is_active:
@@ -115,8 +116,8 @@ def verify_csrf_token(cookie_token: str = Cookie(None,
                                                  include_in_schema=False,
                                                  alias='X-CSRFToken')) -> None:
     """
-    Compare CSRF tokens from request header while client making request,
-    and from cookies on client side. Raise an exception if tokens are not equals.
+    Compare CSRF tokens from request header and from cookies on client side,
+    while client making request. Raise an exception if tokens are not equals.
     """
     csrf_exception = HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

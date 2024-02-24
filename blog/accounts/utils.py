@@ -6,12 +6,13 @@ from datetime import datetime
 from secrets import compare_digest
 from typing import Type, Union
 
+import bcrypt
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts import schemas
 from accounts.models import User
-from common.crud_operations import CrudManager
+from common.crud_operations import CrudManagerAsync
 from common.utils import base36decode, base36encode
 from config import get_settings
 from settings.env_dirs import USER_IMAGES_DIR_PATH
@@ -21,14 +22,15 @@ settings = get_settings()
 
 async def create_user_image_url(current_user: Union[User, Type[User]], scheme: str, domain: str) -> schemas.UserShow:
     """
-    Create and return pydantic user model `UserShow` with updated attribute `image`
-    by adding to the image's url (got from db) HTTP scheme and domain,
+    Create and return Pydantic user model `UserShow` with updated attribute `image`
+    by adding to the image's url (which got from db) HTTP scheme and domain,
     e.g. `http://example.com/static/img/users_images/user/user_avatar.jpg`
     instead of `/static/img/users_images/user/user_avatar.jpg`.
     """
 
     user_image_url = f'{scheme}://{domain}/{current_user.image}' if current_user.image else None
-    user_dict = jsonable_encoder(current_user, exclude={'image'})
+    # exclude data from relations
+    user_dict = jsonable_encoder(current_user, exclude={'image', 'comments', 'likes', 'dislikes', 'posts'})
     user_dict.update(image=user_image_url)
     user_show = schemas.UserShow(**user_dict)
     return user_show
@@ -46,7 +48,7 @@ def create_or_update_user_folder(current_user: User) -> None:
         os.system(f'rm {USER_IMAGES_DIR_PATH}{current_user.username}/*')
 
 
-async def verify_uid_and_token_from_url(db: Session, uidb64: str, token: str) -> Union[User, None]:
+async def verify_uid_and_token_from_url(db: AsyncSession, uidb64: str, token: str) -> Union[User, None]:
     """
     Verify `uidb64` string and token which obtained from url.
     Uidb64 is encoded string with username, token also is string generated from token generator,
@@ -57,7 +59,7 @@ async def verify_uid_and_token_from_url(db: Session, uidb64: str, token: str) ->
     try:
         # decoding user id from uidb64 and getting user from db
         username = urlsafe_b64decode(uidb64).decode('utf-8')
-        user = await CrudManager(db, User).retrieve(User.username == username)
+        user = await CrudManagerAsync(db, User).retrieve(User.username == username)
     except (TypeError, ValueError):
         user = None
     # if user is exists and token term isn't end (token is valid)
@@ -72,7 +74,7 @@ class LimitedLifeTokenGenerator:
     reset or activate account mechanism.
     """
 
-    key_salt = 'blog.account.utils.LimitedLifeTokenGenerator'
+    key_salt = bcrypt.gensalt()
     algorithm = None
 
     def __init__(self, secret_key: str, token_expired_timeout: int) -> None:
@@ -136,7 +138,7 @@ class LimitedLifeTokenGenerator:
         """
         timestamp_base36 = base36encode(timestamp)
         hash_string = hmac.new(
-            key=hashlib.sha256(self.key_salt.encode('utf-8') + secret.encode('utf-8')).digest(),
+            key=hashlib.sha256(self.key_salt + secret.encode('utf-8')).digest(),
             msg=self._make_hash_value(user, timestamp).encode('utf-8'),
             digestmod=hashlib.sha256,
         ).hexdigest()[::2]  # limit to shorten the URL

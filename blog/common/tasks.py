@@ -19,7 +19,7 @@ def invalidate_endpoint_cache(namespace: str, request_method: str) -> str:
     Key in the cache may be looks like:
     "posts:get:/api/v1/posts/read_all/posts:'(limit,100),(skip,0),(sort_by,created_desc)'"
 
-    namespace - `post`
+    namespace - `posts`
     method - `get`
     request path - `/api/v1/posts/read_all/posts`
     query params - `(limit,100),(skip,0),(sort_by,created_desc)`

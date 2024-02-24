@@ -35,7 +35,7 @@ class User(Base):
     Information about user.
     """
 
-    __tablename__ = 'users'  # table's name in database
+    __tablename__ = 'users'
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column('username', String(30), nullable=False, unique=True)
@@ -59,10 +59,10 @@ class User(Base):
     email = Column('email', String, unique=True, index=True, nullable=False)
     hashed_password = Column(String)
     is_active = Column('is_active', Boolean, default=False)
-    posts = relationship('Post', back_populates='owner')
-    likes = relationship('Comment', secondary=likes_table, viewonly=True)
-    dislikes = relationship('Comment', secondary=dislikes_table, viewonly=True)
-    comments = relationship('Comment', back_populates='owner')
+    posts = relationship('Post', back_populates='owner', lazy='selectin')
+    likes = relationship('Comment', secondary=likes_table, viewonly=True, lazy='selectin')
+    dislikes = relationship('Comment', secondary=dislikes_table, viewonly=True, lazy='selectin')
+    comments = relationship('Comment', back_populates='owner', lazy='selectin')
     last_login = Column('last_login', DateTime(timezone=True), nullable=True)
     date_joined = Column('date_joined', DateTime(timezone=True), default=datetime.utcnow(), nullable=False)
     rating = Column('rating', Integer, default=0)

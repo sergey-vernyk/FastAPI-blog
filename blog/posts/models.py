@@ -51,13 +51,13 @@ class Post(ItemModel):
     title = Column('title', String(512), nullable=False, unique=True)
     body = Column('body', Text, nullable=False)
     tags = Column('tags', ARRAY(String(30)), nullable=False)
-    category = relationship('Category', back_populates='posts')
+    category = relationship('Category', back_populates='posts', lazy='selectin')
     category_id = Column(Integer, ForeignKey('postcategories.id', ondelete='CASCADE'))
-    owner = relationship('User', back_populates='posts')
+    owner = relationship('User', back_populates='posts', lazy='selectin')
     owner_id = Column(Integer, ForeignKey('users.id'))
     rating = Column('rating', SmallInteger, default=0)
     is_publish = Column('is_publish', Boolean, default=False)
-    comments = relationship('Comment', back_populates='post', passive_deletes=True)
+    comments = relationship('Comment', back_populates='post', passive_deletes=True, lazy='selectin')
 
     def __repr__(self):
         return f'Post:`{self.title[:50]}`, owner:`{self.owner}`'
@@ -72,7 +72,7 @@ class Category(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column('name', String(50), unique=True)
-    posts = relationship('Post', back_populates='category', passive_deletes=True)
+    posts = relationship('Post', back_populates='category', passive_deletes=True, lazy='selectin')
 
     def __repr__(self):
         return f'Post category: `{self.name}`'
@@ -89,10 +89,10 @@ class Comment(ItemModel):
     body = Column('body', String(600), nullable=False)
     post_id = Column(Integer, ForeignKey('posts.id', ondelete='CASCADE'))
     owner_id = Column(Integer, ForeignKey('users.id'))
-    owner = relationship('User', back_populates='comments')
-    likes = relationship('User', secondary=likes_table, passive_deletes=True)
-    dislikes = relationship('User', secondary=dislikes_table, passive_deletes=True)
-    post = relationship('Post', back_populates='comments')
+    owner = relationship('User', back_populates='comments', lazy='selectin')
+    likes = relationship('User', secondary=likes_table, passive_deletes=True, lazy='selectin')
+    dislikes = relationship('User', secondary=dislikes_table, passive_deletes=True, lazy='selectin')
+    post = relationship('Post', back_populates='comments', lazy='selectin')
 
     def __repr__(self):
         return f'Comment `{self.body[:70]}`'

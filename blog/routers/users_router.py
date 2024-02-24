@@ -2,7 +2,7 @@ import datetime
 import logging
 from base64 import urlsafe_b64encode, urlsafe_b64decode
 from datetime import timedelta
-from typing import Annotated, Type, Union
+from typing import Annotated
 
 from fastapi import (
     APIRouter, status, HTTPException,
@@ -20,7 +20,7 @@ from accounts.utils import (
     verify_uid_and_token_from_url,
     token_generator
 )
-from common.crud_operations import CrudManager
+from common.crud_operations import CrudManagerAsync
 from common.security import (
     create_access_token,
     verify_password_or_exception,
@@ -28,7 +28,7 @@ from common.security import (
     generate_csrf_token,
     get_password_hash
 )
-from common.utils import show_exception, create_cookie
+from common.utils import show_exception, create_cookie, PickleCoderRedis, delete_cookie
 from dependencies import (
     DatabaseDependency,
     ProjSettingsDependency,
@@ -61,7 +61,9 @@ endpoints_logger.addHandler(endpoint_handler)
 @router.post('/create',
              response_model=schemas.UserShow,
              status_code=status.HTTP_201_CREATED,
-             summary='Create User')
+             summary='Create User',
+             operation_id='create-user',
+             responses={400: {'detail': 'Email or username is already exists'}})
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/create')
 async def create_user(request: Request,
                       user: schemas.UserCreate,
@@ -70,7 +72,7 @@ async def create_user(request: Request,
     """
     Create user in database.
     """
-    crud_manager = CrudManager(db, User)
+    crud_manager = CrudManagerAsync(db, User)
     # try to get user by its email or its username
     db_user = await crud_manager.retrieve(User.email == user.email)
     if db_user:
@@ -116,6 +118,7 @@ async def create_user(request: Request,
 @router.get('/activate_account/{uidb64}/{token}',
             status_code=status.HTTP_200_OK,
             include_in_schema=False,
+            operation_id='activate-user-account',
             summary='Activate User\'s Account After Registration')
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/activate_account/{uidb64}/{token}')
 async def activate_user_account(db: DatabaseDependency, uidb64: str, token: str) -> UJSONResponse:
@@ -128,7 +131,7 @@ async def activate_user_account(db: DatabaseDependency, uidb64: str, token: str)
     user = await verify_uid_and_token_from_url(db, uidb64, token)
     if user is not None:
         # activate user account
-        await CrudManager(db, User).partial_update(user, {'is_active': True})
+        await CrudManagerAsync(db, User).partial_update(user, {'is_active': True})
         return UJSONResponse(
             content={'detail': f'Account of `{user.username}` has been activated!'},
             status_code=status.HTTP_200_OK
@@ -142,7 +145,9 @@ async def activate_user_account(db: DatabaseDependency, uidb64: str, token: str)
 @router.post('/upload_user_image',
              response_class=UJSONResponse,
              summary='Add User\'s Image',
-             dependencies=[CsrfVerifyDependency])
+             dependencies=[CsrfVerifyDependency],
+             operation_id='upload-user-image',
+             responses={401: {'detail': 'Not enough permissions'}})
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/upload_user_image')
 async def create_user_photo(current_user: SecurityScopesDependency(scopes=['me:update']),
                             db: DatabaseDependency,
@@ -151,7 +156,7 @@ async def create_user_photo(current_user: SecurityScopesDependency(scopes=['me:u
     """
     Save passed `image` to provided path, and save this path to `db`.
     """
-    current_user = db.merge(current_user)
+    current_user = await db.merge(current_user)
     # convert image to bytes, save it by `image_save_path`
     image_bytes = await image.read()
     create_or_update_user_folder(current_user)
@@ -162,7 +167,7 @@ async def create_user_photo(current_user: SecurityScopesDependency(scopes=['me:u
     with open(image_save_path, 'wb') as img:
         img.write(image_bytes)
 
-    await CrudManager(db, User).partial_update(current_user, {'image': image_db_path})
+    await CrudManagerAsync(db, User).partial_update(current_user, {'image': image_db_path})
     return UJSONResponse(
         status_code=status.HTTP_200_OK,
         content={'detail': f'Image `{image.filename}` has been successfully uploaded'}
@@ -172,26 +177,32 @@ async def create_user_photo(current_user: SecurityScopesDependency(scopes=['me:u
 @router.delete('/delete/me',
                status_code=status.HTTP_204_NO_CONTENT,
                summary='Delete Own Account',
-               dependencies=[CsrfVerifyDependency])
+               dependencies=[CsrfVerifyDependency],
+               operation_id='delete-current-authenticated-user',
+               responses={401: {'detail': 'Not enough permissions'}})
 async def delete_user_me(current_user: SecurityScopesDependency(scopes=['me:delete']),
                          db: DatabaseDependency) -> None:
     """
     Remove `current_user` from db.
     """
-    current_user = db.merge(current_user)  # copy instance into current session `db`
-    await CrudManager(db, User).destroy(current_user)
+    current_user = await db.merge(current_user)  # copy instance into current session `db`
+    await CrudManagerAsync(db, User).destroy(current_user)
 
 
 @router.delete('/delete/{user_id}',
                status_code=status.HTTP_204_NO_CONTENT,
                summary='Delete User By `user_id`',
-               dependencies=[Security(get_current_user, scopes=['user:delete']), CsrfVerifyDependency])
-async def delete_user_by_id(user_id: int,
-                            db: DatabaseDependency) -> None:
+               operation_id='delete-user-by-id',
+               dependencies=[Security(get_current_user, scopes=['user:delete']), CsrfVerifyDependency],
+               responses={
+                   401: {'detail': 'Not enough permissions'},
+                   404: {'detail': 'User is not found'}}
+               )
+async def delete_user_by_id(user_id: int, db: DatabaseDependency) -> None:
     """
     Remove user from `db` by `user_id`.
     """
-    crud_manager = CrudManager(db, User)
+    crud_manager = CrudManagerAsync(db, User)
     db_user = await crud_manager.retrieve(User.id == user_id)
     if not db_user:
         raise show_exception('user', status.HTTP_404_NOT_FOUND)
@@ -203,7 +214,9 @@ async def delete_user_by_id(user_id: int,
             response_model=list[schemas.UserShow],
             status_code=status.HTTP_200_OK,
             summary='Get All Users',
-            dependencies=[Security(get_current_user, scopes=['user:read'])])
+            operation_id='get-all-users',
+            dependencies=[Security(get_current_user, scopes=['user:read'])],
+            responses={401: {'detail': 'Not enough permissions'}})
 @cache(expire=300, namespace=User.__tablename__)
 async def read_users(request: Request,
                      db: DatabaseDependency,
@@ -212,7 +225,7 @@ async def read_users(request: Request,
     """
     Obtain all users from database with `limit` and `skip`.
     """
-    users = await CrudManager(db, User).retrieve(skip=skip, limit=limit, many=True)
+    users = await CrudManagerAsync(db, User).retrieve(skip=skip, limit=limit, many=True)
     return [await create_user_image_url(user, request.base_url.scheme, request.base_url.hostname) for user in users]
 
 
@@ -220,15 +233,20 @@ async def read_users(request: Request,
             response_model=schemas.UserShow,
             status_code=status.HTTP_200_OK,
             summary='Get User By Passed `user_id`',
-            dependencies=[Security(get_current_user, scopes=['user:read'])])
+            operation_id='get-user-by-id',
+            dependencies=[Security(get_current_user, scopes=['user:read'])],
+            responses={
+                401: {'detail': 'Not enough permissions'},
+                404: {'detail': 'User is not found'}}
+            )
 @cache(expire=300, namespace=User.__tablename__)
 async def read_user_by_id(request: Request,
                           user_id: int,
-                          db: DatabaseDependency) -> Union[HTTPException, schemas.UserShow]:
+                          db: DatabaseDependency) -> HTTPException | schemas.UserShow:
     """
     Obtain user by its `user_id`.
     """
-    user = await CrudManager(db, User).retrieve(User.id == user_id)
+    user = await CrudManagerAsync(db, User).retrieve(User.id == user_id)
     if user is None:
         raise show_exception('user', status.HTTP_404_NOT_FOUND)
 
@@ -237,7 +255,9 @@ async def read_user_by_id(request: Request,
 
 @router.post('/login_with_token',
              status_code=status.HTTP_200_OK,
-             summary='Get Access Bearer Token And Login With The Token')
+             operation_id='get-access-token-and-login-user',
+             summary='Get Access Bearer Token And Login With The Token',
+             responses={404: {'detail': 'User is not found'}})
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/login_with_token')
 async def login_for_token(login_data: Annotated[OAuthFormWithDefaultScopes, Depends()],
                           db: DatabaseDependency,
@@ -245,9 +265,9 @@ async def login_for_token(login_data: Annotated[OAuthFormWithDefaultScopes, Depe
     """
     Obtain access bearer token using data from `from_data` and login in the system with the token.
     """
-    crud_manager = CrudManager(db, User)
+    crud_manager = CrudManagerAsync(db, User)
     user = await crud_manager.retrieve(User.username == login_data.username)
-    if not user:
+    if user is None:
         raise show_exception('user', status.HTTP_404_NOT_FOUND)
     # verify passed password from a frontend and hashed user's password in the db
     verify_password_or_exception(user.hashed_password, login_data.password)
@@ -259,10 +279,10 @@ async def login_for_token(login_data: Annotated[OAuthFormWithDefaultScopes, Depe
 
     response = UJSONResponse(
         content={
-            'detail': f'Access token was made on username `{login_data.username}`',
             'access_token': access_token,
             'token_type': 'bearer',
-            'scopes': login_data.scopes
+            'scopes': login_data.scopes,
+            'expires': settings.access_token_expire_minutes
         },
         status_code=status.HTTP_200_OK
     )
@@ -275,9 +295,30 @@ async def login_for_token(login_data: Annotated[OAuthFormWithDefaultScopes, Depe
     return response
 
 
+@router.get('/logout',
+            status_code=status.HTTP_200_OK,
+            operation_id='logout-user',
+            summary='Log Out User',
+            responses={401: {'detail': 'Not enough permissions'}})
+async def logout(current_user: SecurityScopesDependency(scopes=['me:read'])) -> UJSONResponse:
+    """
+    Log out user from system and delete cookies from its client.
+    """
+    response = UJSONResponse(
+        content={'detail': f'You ({current_user.username}) successfully logged out from the system'},
+        status_code=status.HTTP_200_OK
+    )
+
+    delete_cookie(response, 'csrftoken')
+
+    return response
+
+
 @router.get('/me',
             status_code=status.HTTP_200_OK,
-            summary='Get Info About Current User')
+            summary='Get Info About Current User',
+            operation_id='get-current-user-info',
+            responses={401: {'detail': 'Not enough permissions'}})
 @cache(expire=300, namespace=User.__tablename__)
 async def read_users_me(request: Request,
                         current_user: SecurityScopesDependency(scopes=['me:read'])) -> schemas.UserShow:
@@ -290,7 +331,12 @@ async def read_users_me(request: Request,
 @router.patch('/me/update',
               status_code=status.HTTP_200_OK,
               summary='Update Own User Data',
-              dependencies=[CsrfVerifyDependency])
+              operation_id='update-current-user-info',
+              dependencies=[CsrfVerifyDependency],
+              responses={
+                  401: {'detail': 'Not enough permissions'},
+                  403: {'detail': 'CSRF token missing or incorrect'}}
+              )
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/me/update')
 async def update_user_info(request: Request,
                            current_user: SecurityScopesDependency(scopes=['me:update']),
@@ -299,10 +345,10 @@ async def update_user_info(request: Request,
     """
     Update `current_user` information from `data`.
     """
-    current_user = db.merge(current_user)  # copy instance into current session `db`
+    current_user = await db.merge(current_user)  # copy instance into current session `db`
     # exclude fields that were not passed for update and considered as `None`
     data_to_update = update_data.model_dump(exclude_none=True)
-    updated_user = await CrudManager(db, User).partial_update(current_user, data_to_update)
+    updated_user = await CrudManagerAsync(db, User).partial_update(current_user, data_to_update)
     user_show = await create_user_image_url(updated_user, request.base_url.scheme, request.base_url.hostname)
     return user_show
 
@@ -310,7 +356,9 @@ async def update_user_info(request: Request,
 @router.get('/me/posts',
             response_model=list[UserPostsShow],
             status_code=status.HTTP_200_OK,
-            summary='Get Posts That Published By Current User')
+            operation_id='get-current-user-posts',
+            summary='Get Posts That Published By Current User',
+            responses={401: {'detail': 'Not enough permissions'}})
 @cache(expire=300, namespace=User.__tablename__)
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/me/posts')
 async def get_user_posts(db: DatabaseDependency,
@@ -348,14 +396,21 @@ async def get_user_posts(db: DatabaseDependency,
 @router.get('/me/comments',
             response_model=list[UserCommentsShow],
             status_code=status.HTTP_200_OK,
-            summary='Get All Comments Related To Current User')
-@cache(expire=300, namespace=User.__tablename__)
+            operation_id='get-current-user-comments',
+            summary='Get All Comments Related To Current User',
+            responses={
+                401: {'detail': 'Not enough permissions'},
+                400: {'detail': 'Wrong criteria was provided (neither like, dislike nor all)'}}
+            )
+# used custom `PickleCoderRedis` coder in order to avoid `maximum recursion exceeded` error,
+# while FastAPI tries to save response data to Redis Cache.
+@cache(expire=300, namespace=User.__tablename__, coder=PickleCoderRedis)
 async def get_users_comments(db: DatabaseDependency,
                              current_user: SecurityScopesDependency(scopes=['comment:read']),
                              rate_status: Annotated[str, Query(
                                  description='Get only either liked or disliked comments')] = 'all',
                              skip: int = 0,
-                             limit: int = 100) -> list[Type[Comment]]:
+                             limit: int = 100) -> list[Comment]:
     """
     Obtain comments, which related to `current_user`.
     Filter comments by installed status: like or dislike.
@@ -369,7 +424,12 @@ async def get_users_comments(db: DatabaseDependency,
 
 
 @router.post('/reset_password',
-             summary='Reset Forgotten User Password and Set New One')
+             operation_id='reset-account-password',
+             summary='Reset Forgotten User Password and Set New One',
+             responses={
+                 400: {'detail': 'Not provided required data for action'},
+                 404: {'detail': 'User is not found'}}
+             )
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/reset_password')
 async def reset_password(request: Request,
                          reset_pswd_form: schemas.ResetUserPassword,
@@ -379,7 +439,7 @@ async def reset_password(request: Request,
     Reset user password, which user could forget or for update old password.
     User must enter ONLY its (email or username) and password for perform this action.
     """
-    crud_manager = CrudManager(db, User)
+    crud_manager = CrudManagerAsync(db, User)
     if reset_pswd_form.username:
         db_user = await crud_manager.retrieve(User.username == reset_pswd_form.username)
     elif reset_pswd_form.email:
@@ -425,6 +485,7 @@ async def reset_password(request: Request,
 
 @router.get('/confirm_reset_password/{uid_pass}/{token}',
             include_in_schema=False,
+            operation_id='confirm-reset-password',
             status_code=status.HTTP_200_OK,
             summary='Confirm Password Reset')
 @set_endpoint_logger(level='info', module_name=__name__, endpoint_path='/confirm_reset_password/{uid_pass}/{token}')
@@ -438,7 +499,7 @@ async def confirm_reset_password(db: DatabaseDependency, uid_pass: str, token: s
     user = await verify_uid_and_token_from_url(db, username_b64, token)
     if user is not None:
         data = {'password': urlsafe_b64decode(passwd_b64).decode('utf-8')}
-        await CrudManager(db, User).partial_update(user, update_password=True, data_to_update=data)
+        await CrudManagerAsync(db, User).partial_update(user, update_password=True, data_to_update=data)
         return UJSONResponse(
             content={'detail': 'Password has been changed successfully'},
             status_code=status.HTTP_200_OK

@@ -1,6 +1,9 @@
-from typing import Callable
+import codecs
+import pickle
+from typing import Callable, Any
 
 from fastapi import status, HTTPException, Request
+from fastapi_cache.coder import PickleCoder
 from starlette.responses import Response
 
 
@@ -10,7 +13,7 @@ def show_exception(sub: str, error: int) -> HTTPException:
     """
     info = {
         status.HTTP_404_NOT_FOUND: f'{sub.capitalize()} with passed id does not exists',
-        status.HTTP_403_FORBIDDEN: f'{sub.capitalize()} can be updated only by staff users or by its owner',
+        status.HTTP_403_FORBIDDEN: f'{sub.capitalize()} can be deleted/updated only by staff users or by its owner',
         status.HTTP_400_BAD_REQUEST: f'{sub.capitalize()} already exists'
     }
     return HTTPException(status_code=error, detail=info[error])
@@ -27,6 +30,18 @@ def create_cookie(response: Response, key: str, value: str) -> None:
         httponly=True,  # Ensures that the cookie is only accessible via HTTP (not JavaScript)
         secure=True,  # Ensures that the cookie is only sent over HTTPS
         samesite='strict',  # Prevents the cookie from being sent in cross-site requests
+    )
+
+
+def delete_cookie(response: Response, key: str) -> None:
+    """
+    Remove cookie from client side by `key`.
+    """
+    response.delete_cookie(
+        key=key,
+        secure=True,
+        httponly=True,
+        samesite='strict'
     )
 
 
@@ -78,3 +93,18 @@ def endpoint_cache_key_builder(func: Callable, namespace: str = '', *,
         request.url.path,
         repr(','.join(f'({k},{v})' for k, v in sorted(request.query_params.items()) if request.query_params))
     ])
+
+
+class PickleCoderRedis(PickleCoder):
+    """
+    Codec for encode and decode from Redis cache,
+    when Redis respond in bytes format.
+    """
+
+    @classmethod
+    def encode(cls, value: Any) -> str:
+        return codecs.encode(pickle.dumps(value), 'base64').decode()
+
+    @classmethod
+    def decode(cls, value: bytes) -> Any:
+        return pickle.loads(codecs.decode(value, 'base64'))

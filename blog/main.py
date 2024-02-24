@@ -13,22 +13,33 @@ from db_connection import Base, engine
 from routers import posts_router, users_router
 from settings import env_dirs
 
-Base.metadata.create_all(bind=engine)
 settings = get_settings()
+
+
+async def create_db_tables():
+    """
+    Creates tables in a database.
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    await engine.dispose()
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """
-    Initialize cache for endpoints when application starts.
+    Initialize cache for endpoints and create tables in a database (if they does not exists)
+    when application starting.
+
     """
     redis = aioredis.from_url(env_dirs.REDIS_CACHE_URL)
     FastAPICache.init(RedisBackend(redis), prefix='fastapi-cache', key_builder=endpoint_cache_key_builder)
+    await create_db_tables()
     yield
 
 
-DESCRIPTION = """
-Blog on FastAPI Python Framework with user authentication and authorization,
+DESCRIPTION = """Blog on FastAPI Python Framework with user authentication and authorization, 
 blog post management, comments, search and filters, categories and tags, user's dashboard etc."""
 
 app = FastAPI(
