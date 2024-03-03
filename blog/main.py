@@ -41,7 +41,7 @@ async def lifespan(application: FastAPI):
     yield
 
 
-DESCRIPTION = """Blog on FastAPI Python Framework with user authentication and authorization, 
+DESCRIPTION = """Blog on FastAPI Python Framework with user authentication and authorization,
 blog post management, comments, search and filters, categories and tags, user's dashboard etc."""
 
 app = FastAPI(

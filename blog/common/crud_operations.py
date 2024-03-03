@@ -22,7 +22,7 @@ class CrudManagerAbstract(ABC):
     def __init__(self, db: Union[Session, AsyncSession], model_class, *args, **kwargs):
         self._session = db
         self._model_class = model_class
-        raise NotImplemented('Method `__init__` is not implemented in the child class.')
+        raise NotImplementedError('Method `__init__` is not implemented in the child class.')
 
     def __repr__(self):
         return f'Model: {self._model_class}, session: {self._session.bind.engine}'
