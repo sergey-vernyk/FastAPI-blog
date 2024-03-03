@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts import models
-from accounts.schemas import TokenData
+from accounts.auth.schemas import TokenData
 from common.crud_operations import CrudManagerAsync
 from config import Settings, get_settings
 from db_connection import SessionAsyncLocal

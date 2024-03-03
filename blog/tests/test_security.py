@@ -8,7 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from accounts.models import User
-from accounts.schemas import TokenData
+from accounts.auth.schemas import TokenData
 from accounts.utils import LimitedLifeTokenGenerator
 from common.security import (
     create_access_token,

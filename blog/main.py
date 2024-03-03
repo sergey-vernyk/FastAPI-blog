@@ -7,10 +7,12 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis import asyncio as aioredis
 
+from accounts import router as accounts_router
+from accounts.auth import router as auth_router
 from common.utils import endpoint_cache_key_builder
 from config import get_settings
 from db_connection import Base, engine
-from routers import posts_router, users_router
+from posts import router as posts_router
 from settings import env_dirs
 
 settings = get_settings()
@@ -50,8 +52,9 @@ app = FastAPI(
     version='0.1',
     root_path=f'/api/v{settings.api_version}'
 )
-app.include_router(router=users_router.router, prefix='/users', tags=['Users'])
+app.include_router(router=accounts_router.router, prefix='/users', tags=['Users'])
 app.include_router(router=posts_router.router, prefix='/posts', tags=['Posts'])
+app.include_router(router=auth_router.router, prefix='/auth', tags=['Auth'])
 
 # mount directory for static files
 app.mount('/static', StaticFiles(directory=env_dirs.STATIC_DIRECTORY), name='static')

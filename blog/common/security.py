@@ -8,7 +8,7 @@ from fastapi.param_functions import Form
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
 
-from accounts.schemas import TokenData
+from accounts.auth.schemas import TokenData
 from config import get_settings
 
 DEFAULT_ACCESS_SCOPES = (

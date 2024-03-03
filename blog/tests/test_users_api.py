@@ -624,7 +624,7 @@ async def test_login_with_token_success(client: AsyncClient, create_multiple_use
     }
 
     response = await client.post(
-        url='/users/login_with_token',
+        url='/auth/login_with_token',
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         data=form_data
     )
@@ -653,7 +653,7 @@ async def test_login_with_token_if_passed_user_not_found(client: AsyncClient) ->
     }
 
     response = await client.post(
-        url='/users/login_with_token',
+        url='/auth/login_with_token',
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         data=form_data
     )
@@ -675,7 +675,7 @@ async def test_logout_success(client: AsyncClient, user_for_token: User) -> None
     }
 
     response = await client.post(
-        url='/users/login_with_token',
+        url='/auth/login_with_token',
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         data=form_data
     )
@@ -685,7 +685,7 @@ async def test_logout_success(client: AsyncClient, user_for_token: User) -> None
 
     # loging out
     response = await client.get(
-        url='/users/logout',
+        url='/auth/logout',
         headers={'Authorization': f'Bearer {response.json()["access_token"]}'}
     )
 
@@ -699,7 +699,7 @@ async def test_logout_fail(client: AsyncClient, user_for_token: User) -> None:
     """
     Test logging out user from the system when user is not authenticated.
     """
-    response = await client.get(url='/users/logout')
+    response = await client.get(url='/auth/logout')
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert response.json() == {"detail": "Not authenticated"}

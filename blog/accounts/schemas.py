@@ -79,21 +79,3 @@ class ResetUserPassword(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     password: str = Field(min_length=10)
-
-
-class Token(BaseModel):
-    """
-    Define data types for token.
-    """
-
-    access_token: str
-    token_type: str
-
-
-class TokenData(BaseModel):
-    """
-    Data for get username and scopes from passed token.
-    """
-
-    username: str | None = None
-    scopes: list[str] = []
