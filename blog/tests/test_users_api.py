@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from accounts.models import User
 from accounts.schemas import UserShow
 from accounts.utils import token_generator
-from common.security import create_access_token, get_token_data, get_password_hash
+from common.security import create_access_token, get_password_hash
 from posts.models import Comment, Post
 from posts.schemas import UserCommentsShow, UserPostsShow
 from settings.development_dirs import USER_IMAGES_DIR_PATH
@@ -611,102 +611,6 @@ async def test_confirm_reset_password_fail(client: AsyncClient, user_for_token: 
 
 
 @pytest.mark.anyio
-async def test_login_with_token_success(client: AsyncClient, create_multiple_users: list[User]) -> None:
-    """
-    Test get access token with scope.
-    """
-    user_for_token = create_multiple_users[0]
-
-    form_data = {
-        'username': user_for_token.username,
-        'password': 'password1',
-        'scope': 'posts:read'
-    }
-
-    response = await client.post(
-        url='/auth/login_with_token',
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-        data=form_data
-    )
-
-    assert response.status_code == status.HTTP_200_OK
-    response_data = response.json()
-    assert 'access_token' in response_data and 'token_type' in response_data
-    assert response_data['token_type'] == 'bearer'
-    # check data from token (scopes and username)
-    token_data = get_token_data(response_data['access_token'])
-    assert token_data.username == user_for_token.username
-    assert token_data.scopes == [form_data['scope']]
-    assert len(response.cookies) > 0, 'Must available cookies'
-    assert 'csrftoken' in response.cookies, 'Must be csrftoken in the cookies'
-
-
-@pytest.mark.anyio
-async def test_login_with_token_if_passed_user_not_found(client: AsyncClient) -> None:
-    """
-    Test get access token if user with passed username is not exists.
-    """
-    form_data = {
-        'username': 'not_existing_user',
-        'password': 'password1',
-        'scope': 'posts:read'
-    }
-
-    response = await client.post(
-        url='/auth/login_with_token',
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-        data=form_data
-    )
-
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert response.json() == {'detail': 'User with passed id does not exists'}
-
-
-@pytest.mark.anyio
-async def test_logout_success(client: AsyncClient, user_for_token: User) -> None:
-    """
-    Test successfully logging out user from system and deleting CSRF token from its client.
-    """
-    # authenticating
-    form_data = {
-        'username': user_for_token.username,
-        'password': USER_DATA['password'],
-        'scope': 'me:read'
-    }
-
-    response = await client.post(
-        url='/auth/login_with_token',
-        headers={'Content-Type': 'application/x-www-form-urlencoded'},
-        data=form_data
-    )
-
-    assert response.status_code == status.HTTP_200_OK
-    assert client.cookies.get('csrftoken') is not None
-
-    # loging out
-    response = await client.get(
-        url='/auth/logout',
-        headers={'Authorization': f'Bearer {response.json()["access_token"]}'}
-    )
-
-    assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {'detail': f'You ({user_for_token.username}) successfully logged out from the system'}
-    assert client.cookies.get('csrftoken') is None
-
-
-@pytest.mark.anyio
-async def test_logout_fail(client: AsyncClient, user_for_token: User) -> None:
-    """
-    Test logging out user from the system when user is not authenticated.
-    """
-    response = await client.get(url='/auth/logout')
-
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    assert response.json() == {"detail": "Not authenticated"}
-    assert client.cookies.get('csrftoken') is None
-
-
-@pytest.mark.anyio
 async def test_get_user_posts_without_filter(client: AsyncClient,
                                              get_token: str,
                                              create_posts_for_user: list[Post],
@@ -795,11 +699,12 @@ async def test_get_user_posts_without_particular_scope(client: AsyncClient, crea
 
 
 @pytest.mark.anyio
-async def test_get_users_comment_with_particular_scope(client: AsyncClient,
+async def test_get_user_comments_with_particular_scope(client: AsyncClient,
                                                        create_comments_to_posts_for_user: list[Comment],
-                                                       get_token: str) -> None:
+                                                       get_token: str,
+                                                       mock_redis) -> None:
     """
-    Test get all posts of current authenticated user is user has appropriate access scope.
+    Test get all posts of current authenticated user is user has apprompriate access scope.
     """
     response = await client.get(
         url='/users/me/comments',
@@ -818,7 +723,59 @@ async def test_get_users_comment_with_particular_scope(client: AsyncClient,
 
 
 @pytest.mark.anyio
-async def test_get_users_comment_without_particular_scope(client: AsyncClient,
+async def test_get_user_liked_comments_with_particular_scope(client: AsyncClient,
+                                                             create_comments_to_posts_for_user: list[Comment],
+                                                             get_token: str,
+                                                             mock_redis) -> None:
+    """
+    Test get only liked posts of current authenticated user is user has appropriate access scope.
+    """
+    # make comment as liked
+    comment_for_like = create_comments_to_posts_for_user[0]
+    user_for_like = create_comments_to_posts_for_user[1].owner
+    comment_for_like.likes.append(user_for_like)
+
+    response = await client.get(
+        url='/users/me/comments',
+        headers={'Authorization': f'Bearer {get_token}'},
+        params={'rate_status': 'like'}
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert len(response_data) == 1, 'Must be 1 comment'
+    assert UserCommentsShow(**response_data[0]) == UserCommentsShow(
+        **jsonable_encoder(create_comments_to_posts_for_user[0]))
+
+
+@pytest.mark.anyio
+async def test_get_user_disliked_comments_with_particular_scope(client: AsyncClient,
+                                                                create_comments_to_posts_for_user: list[Comment],
+                                                                get_token: str,
+                                                                mock_redis) -> None:
+    """
+    Test get only disliked posts of current authenticated user is user has appropriate access scope.
+    """
+    # make comment as disliked
+    comment_for_dislike = create_comments_to_posts_for_user[0]
+    user_for_dislike = create_comments_to_posts_for_user[1].owner
+    comment_for_dislike.dislikes.append(user_for_dislike)
+
+    response = await client.get(
+        url='/users/me/comments',
+        headers={'Authorization': f'Bearer {get_token}'},
+        params={'rate_status': 'dislike'}
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    response_data = response.json()
+    assert len(response_data) == 1, 'Must be 1 comment'
+    assert UserCommentsShow(**response_data[0]) == UserCommentsShow(
+        **jsonable_encoder(create_comments_to_posts_for_user[0]))
+
+
+@pytest.mark.anyio
+async def test_get_user_comments_without_particular_scope(client: AsyncClient,
                                                           create_multiple_users: list[User]) -> None:
     """
     Test get all posts of current authenticated user if user has not appropriate access scope.

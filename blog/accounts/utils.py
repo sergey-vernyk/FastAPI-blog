@@ -107,9 +107,13 @@ class LimitedLifeTokenGenerator:
             return False
         # Parse the token
         try:
-            timestamp_base36, _ = token.split('-')
+            split_token = token.split('-')
         except ValueError:
             return False
+        else:
+            if len(split_token) != 2:
+                return False
+            timestamp_base36, hash_string = split_token
 
         try:
             ts = base36decode(timestamp_base36)

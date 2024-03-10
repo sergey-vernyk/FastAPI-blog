@@ -117,16 +117,6 @@ class TestLimitedLifeTokenGenerator:
         result = self.token_generator.check_token(user_for_token, token)
         assert result is True
 
-    def test_check_token_expired(self, user_for_token) -> None:
-        """
-        Test check generated token when token lifetime is expired.
-        We imitate changing token expiration time as if was over.
-        """
-        self.token_generator._token_expired_time = -1
-        token = self.token_generator.make_token(user_for_token)
-        result = self.token_generator.check_token(user_for_token, token)
-        assert result is False
-
     @pytest.mark.anyio
     async def test_check_token_if_changed_hash_value(self, user_for_token, db: AsyncSession) -> None:
         """
@@ -144,3 +134,29 @@ class TestLimitedLifeTokenGenerator:
         await db.refresh(user_for_token)
         result = self.token_generator.check_token(user_for_token, token)
         assert result is False
+
+    @pytest.mark.anyio
+    async def test_check_token_return_false(self, user_for_token, db: AsyncSession) -> None:
+        """
+        Test check the generated token when there were
+        conditions which leads to that token becomes invalid.
+        """
+        token = self.token_generator.make_token(user_for_token)
+
+        # if function for checking token state has not received `user` or `token`
+        actual_result = self.token_generator.check_token(token, '')
+        assert actual_result is False
+
+        # if token has incorrect format (without hyphen inside)
+        actual_result = self.token_generator.check_token(user_for_token, 'lkmkvmowevowenownefwfin')
+        assert actual_result is False
+
+        # if token has been expired
+        self.token_generator._token_expired_time = -1
+        token = self.token_generator.make_token(user_for_token)
+        actual_result = self.token_generator.check_token(user_for_token, token)
+        assert actual_result is False
+
+        # if token's timestamp has not been decoded correctly (encoded timestamp has length more than 13 symbols)
+        actual_result = self.token_generator.check_token(user_for_token, 'lkmkvictonuntixru-mowevowenownefwfinclmg')
+        assert actual_result is False
