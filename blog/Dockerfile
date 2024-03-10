@@ -27,7 +27,7 @@ RUN mkdir -p /vol/certs && \
     chown -R $user:www-data /vol/certs && \
     chmod 755 /vol/certs
 
-USER $userS
+USER $user
 
 ADD pyproject.toml poetry.lock ./
 

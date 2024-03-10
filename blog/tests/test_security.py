@@ -7,8 +7,8 @@ from pytest import raises
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from accounts.models import User
 from accounts.auth.schemas import TokenData
+from accounts.models import User
 from accounts.utils import LimitedLifeTokenGenerator
 from common.security import (
     create_access_token,
@@ -72,6 +72,25 @@ def test_create_access_token(create_multiple_users: list[User]) -> None:
         minutes=5), 'Token have already expired'
 
 
+def test_create_access_token_if_not_passed_expire_time(create_multiple_users: list[User]) -> None:
+    """
+    Test create access JWT token with scopes and verify its expiry date,
+    if there was not passed expire time for the token.
+    """
+    data = {
+        'sub': create_multiple_users[0].username,
+        'scopes': ['scope:read', 'scope:write', 'scope:delete']
+    }
+    # pass timedelta into token data
+    token = create_access_token(data)
+    decoded_token = jwt.decode(token, key=settings.secret_key, algorithms=[settings.algorithm])
+    assert decoded_token['sub'] == create_multiple_users[0].username
+    assert decoded_token['scopes'] == data['scopes']
+    # check whether access token has not expired
+    assert datetime.fromtimestamp(decoded_token['exp']) - datetime.now() <= timedelta(
+        minutes=15), 'Token have already expired'
+
+
 class TestLimitedLifeTokenGenerator:
 
     def setup_method(self) -> None:
@@ -83,7 +102,7 @@ class TestLimitedLifeTokenGenerator:
     def test_make_token(self, user_for_token) -> None:
         """
         Test make limited life token. We can check only availability of token,
-        and its format, since generator make different token each time.
+        and its format, since generator makes different token each time.
         """
         token = self.token_generator.make_token(user_for_token)
         assert len(token) > 0

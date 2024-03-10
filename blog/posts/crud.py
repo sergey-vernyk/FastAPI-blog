@@ -1,4 +1,4 @@
-from sqlalchemy import func, select, desc, update
+from sqlalchemy import func, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
@@ -45,28 +45,6 @@ async def get_posts_query(category: str,
         .order_by(sort_conditions[sort_by])
         .offset(skip)
         .limit(limit)
-    )
-
-
-async def update_post_query(db: AsyncSession, post: Post, data_to_update: dict) -> Select:
-    """
-    Update post with passed parameters and return query with the post along extra data.
-    """
-    statement = (
-        update(Post.__table__)
-        .where(Post.id == post.id)
-        .values(**data_to_update)
-    )
-    await db.execute(statement)
-    await db.commit()
-    # invalidate cache after post's data has been updated
-    invalidate_endpoint_cache.delay(namespace=Post.__tablename__, request_method='get')
-    return (
-        select(Post, func.count(Comment.id).label('count_comments'))
-        .join(Category)
-        .outerjoin(Comment)
-        .filter(Post.id == post.id)
-        .group_by(Post.id)
     )
 
 
