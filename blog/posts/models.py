@@ -18,8 +18,8 @@ class ItemModel(Base):
 
     __abstract__ = True
 
-    created = Column('created', DateTime, default=datetime.utcnow)
-    updated = Column('updated', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created = Column('created', DateTime, default=datetime.now)
+    updated = Column('updated', DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 # association tables for likes and dislikes for user
