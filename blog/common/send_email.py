@@ -4,7 +4,7 @@ from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Sequence, Union, Literal, AnyStr
+from typing import Sequence, Literal, AnyStr, NamedTuple
 
 from jinja2 import FileSystemLoader, Environment
 
@@ -13,6 +13,37 @@ from settings.env_dirs import TEMPLATES_DIR_PATH
 
 settings = get_settings()
 environment = Environment(loader=FileSystemLoader(TEMPLATES_DIR_PATH))  # define templates location
+
+
+class WrongReceivedDataTypeException(Exception):
+    """
+    Raise this exception if was has been received unsupported data type.
+    And there are no methods to handle received data type.
+    """
+
+    _message = 'Received unsupported data type. Allowed types are <str> and <bytes>, but type <{}> was provided.'
+
+    def __init__(self, received_type):
+        self.received_type = received_type
+        self.message = self._message.format(type(received_type).__name__)
+        super().__init__(self.message)
+
+
+class EmailContent(NamedTuple):
+    """
+    Content for email body.
+    """
+
+    plain_text: AnyStr | None = None
+    html_name: AnyStr | None = None
+    file_name: str | None = None
+    image_name: str | None = None
+
+    def __bool__(self) -> bool:
+        """
+        Instance must have one attribute as not None at least to return True.
+        """
+        return any([self.plain_text, self.html_name, self.file_name, self.image_name])
 
 
 class EmailWithAttachments:
@@ -27,7 +58,7 @@ class EmailWithAttachments:
         'plain_text': MIMEText,
         'html': MIMEText,
         'file': MIMEApplication,
-        'image': MIMEImage
+        'image': MIMEImage,
     }
 
     def __init__(self, send_from: str, host: str, password: str, port: int = 465) -> None:
@@ -37,20 +68,19 @@ class EmailWithAttachments:
         self.password = password
         self._attachments_data = dict.fromkeys(['file', 'plain_text', 'html', 'image'], None)
 
-    def _create_mimetype_document(self,
-                                  doc_type: Literal['plain_text', 'html', 'file', 'image'],
-                                  content: AnyStr) -> Union[MIMEText, MIMEImage, MIMEApplication]:
+    def _create_mimetype_document(
+        self, doc_type: Literal['plain_text', 'html', 'file', 'image'], content: AnyStr
+    ) -> MIMEText | MIMEImage | MIMEApplication:
         """
         Returns MIME `doc_type` document created with `content`.
         """
+
         if doc_type == 'html':
             return self.mime_types[doc_type](_text=content, _subtype='html')
 
         return self.mime_types[doc_type](content)
 
-    def _read_content(self,
-                      source: AnyStr,
-                      type_media: bool = False) -> str | FileNotFoundError | TypeError:
+    def _read_content(self, source: AnyStr, type_media: bool = False) -> str | FileNotFoundError | TypeError:
         """
         Read content from `source` taking in account its type.
         - `type_media` flag to recognize file type from passed `source` - media or text (False -> text),
@@ -67,43 +97,34 @@ class EmailWithAttachments:
         elif isinstance(source, bytes):
             return source.decode('utf-8')
 
-        raise TypeError(
-            f'Received invalid data type. '
-            f'Allowed types are <str> and <bytes>, but type <{type(source).__name__}> was provided'
-        )
+        raise WrongReceivedDataTypeException(received_type=source)
 
-    def _compose_email_attachments(self,
-                                   plain_text: AnyStr | None = None,
-                                   html_name: AnyStr | None = None,
-                                   file_name: str | None = None,
-                                   image_name: str | None = None) -> dict:
+    def _compose_email_attachments(self, attachments: EmailContent) -> dict:
         """
         Returns dict with attachment data for email.
         Data in dict are in particular MIME type which depends on their content.
         """
-        # if no parameter has been sent
-        if all([plain_text, html_name, file_name, image_name]) is None:
-            raise ValueError('You must passed at least plain text for message\'s body')
-
-        if plain_text is not None:
+        if attachments.plain_text is not None:
             document = None
-            if isinstance(plain_text, bytes):
-                content = self._read_content(plain_text)
+            if isinstance(attachments.plain_text, bytes):
+                content = self._read_content(attachments.plain_text)
                 document = self._create_mimetype_document('plain_text', content)
-            elif isinstance(plain_text, str):
-                document = self._create_mimetype_document('plain_text', plain_text)
+            elif isinstance(attachments.plain_text, str):
+                document = self._create_mimetype_document('plain_text', attachments.plain_text)
 
             self._attachments_data['plain_text'] = document
 
-        if html_name:
-            content = self._read_content(html_name)
+        if attachments.html_name:
+            content = self._read_content(attachments.html_name)
             document = self._create_mimetype_document('html', content)
             self._attachments_data['html'] = document
 
-        if file_name:
-            content = self._read_content(file_name, type_media=True)
+        if attachments.file_name:
+            content = self._read_content(attachments.file_name, type_media=True)
             file = self._create_mimetype_document('file', content)
-            filename = file_name if '/' not in file_name else file_name.split('/')[-1]
+            filename = (
+                attachments.file_name if '/' not in attachments.file_name else attachments.file_name.split('/')[-1]
+            )
             # add header as key/value pair to attachment part
             file.add_header(
                 'Content-Disposition',
@@ -111,10 +132,12 @@ class EmailWithAttachments:
             )
             self._attachments_data['file'] = file
 
-        if image_name:
-            content = self._read_content(image_name, type_media=True)
+        if attachments.image_name:
+            content = self._read_content(attachments.image_name, type_media=True)
             image = self._create_mimetype_document('image', content)
-            imagename = image_name if '/' not in image_name else image_name.split('/')[-1]
+            imagename = (
+                attachments.image_name if '/' not in attachments.image_name else attachments.image_name.split('/')[-1]
+            )
             # add header as key/value pair to attachment part
             image.add_header(
                 'Content-Disposition',
@@ -131,29 +154,17 @@ class EmailWithAttachments:
         template = environment.get_template(template_name)
         return template.render(context).encode('utf-8')
 
-    def send_mail(self,
-                  send_to: Sequence[str] | str,
-                  subject: str,
-                  bcc: Sequence[str] | str | None = None,
-                  content: dict[
-                               Literal['plain_text'], str | bytes,
-                               Literal['html_name'], str | bytes,
-                               Literal['file_name'], str,
-                               Literal['image_name'], str
-                           ] | None = None) -> smtplib.SMTPResponseException | Literal['Successfully']:
+    def send_mail(
+        self, send_to: Sequence[str] | str, subject: str, content: EmailContent, bcc: Sequence[str] | str | None = None
+    ) -> smtplib.SMTPResponseException | Literal['Successfully']:
         """
         Send email over SSL.
         - `send_to` - email receivers,
         - `subject` - email subject,
         - `bcc` - blind carbon copy receivers,
-        - `content` - dict with content for sending in format {key: value}:
+        - `content` - `EmailContent` typed tuple
 
-            {'plain_text': text or bytes,
-             'html_name': text html or bytes,
-             'file_name': file name,
-             'image_name': image name}
-
-        Returns SMTPResponseException if there were any errors.
+        Returns `SMTPResponseException` if there were any errors.
         """
         message = MIMEMultipart('alternative')
         message['Subject'] = subject
@@ -162,7 +173,7 @@ class EmailWithAttachments:
         if isinstance(bcc, list):
             bcc = ', '.join(bcc)
         # attach parts to the message
-        for att in self._compose_email_attachments(**content).values():
+        for att in self._compose_email_attachments(content).values():
             if att is not None:
                 message.attach(att)
 
@@ -174,19 +185,19 @@ class EmailWithAttachments:
                 # include receivers for bcc if any
                 to_addrs=[send_to] + [bcc] if bcc else [send_to],
                 from_addr=self.send_from,
-                msg=message.as_string()
+                msg=message.as_string(),
             )
         if result:
+            code = list(result.values())[0][0]
+            msg = list(result.keys())[0]
             raise smtplib.SMTPResponseException(
-                code=result.values()[0],
-                msg=f'Check your email `{result.keys()[0]}` for accuracy. '
-                    f'Probably you made typo mistake or provided wrong address.'
+                code=code,
+                msg=f'Check your email `{msg}` for accuracy. '
+                f'Probably you made typo mistake or provided wrong address.',
             )
         return 'Successfully'
 
 
 email_sender = EmailWithAttachments(
-    send_from=settings.email_from,
-    host=settings.email_host,
-    password=settings.email_password
+    send_from=settings.email_from, host=settings.email_host, password=settings.email_password
 )

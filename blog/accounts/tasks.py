@@ -2,7 +2,7 @@ from smtplib import SMTPResponseException
 from typing import Literal, Sequence
 
 from celery_app import app
-from common.send_email import email_sender
+from common.send_email import email_sender, EmailContent
 
 
 @app.task(name='send_user_email')
@@ -24,7 +24,7 @@ def send_email_to_user(context: dict,
         context=context
     )
     return email_sender.send_mail(
-        content={'plain_text': plain_text_content, 'html_name': html_content},
+        content=EmailContent(plain_text=plain_text_content, html_name=html_content),
         send_to=send_to,
         subject=context['subject']
     )

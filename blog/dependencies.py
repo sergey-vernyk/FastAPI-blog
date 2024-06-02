@@ -77,8 +77,8 @@ async def get_current_user(security_scopes: SecurityScopes,
             raise credentials_exception
         token_scopes = payload.get('scopes', [])
         token_data = TokenData(username=username, scopes=token_scopes)
-    except (JWTError, ValidationError):
-        raise credentials_exception
+    except (JWTError, ValidationError) as exc:
+        raise credentials_exception from exc
     user = await CrudManagerAsync(db, models.User).retrieve(models.User.username == token_data.username)
     if user is None:
         raise credentials_exception
