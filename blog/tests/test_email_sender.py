@@ -1,17 +1,17 @@
+import os
 import smtplib
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from email.mime.text import MIMEText
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
 import pytest
+from common.send_email import (EmailContent, EmailWithAttachments,
+                               WrongReceivedDataTypeException, email_sender)
 
-from common.send_email import (
-    EmailWithAttachments,
-    email_sender,
-    EmailContent,
-    WrongReceivedDataTypeException
-)
+# select current module's directory
+module_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(module_dir)
 
 
 class TestEmailWithAttachments:
@@ -45,21 +45,18 @@ class TestEmailWithAttachments:
         assert actual_result.get_payload() == self.html_doc
 
         # test create image document
-        with open('/home/sergey/PycharmProjects/Blog_FastAPI/blog/tests/avatar.png', 'rb') as image:
+        with open('avatar.png', 'rb') as image:
             actual_result = email_sender._create_mimetype_document(doc_type='image', content=image.read())
 
         assert isinstance(actual_result, MIMEImage)
-        assert open(
-            '/home/sergey/PycharmProjects/Blog_FastAPI/blog/tests/avatar.png',
-            'rb').read() == actual_result.get_payload(decode=True)
+        assert open('avatar.png', 'rb').read() == actual_result.get_payload(decode=True)
 
         # test create file document
-        with open('/home/sergey/PycharmProjects/Blog_FastAPI/blog/tests/sample-pdf-file.pdf', 'rb') as file:
+        with open('sample-pdf-file.pdf', 'rb') as file:
             actual_result = email_sender._create_mimetype_document(doc_type='file', content=file.read())
 
         assert isinstance(actual_result, MIMEApplication)
-        assert open('/home/sergey/PycharmProjects/Blog_FastAPI/blog/tests/sample-pdf-file.pdf',
-                    'rb').read() == actual_result.get_payload(decode=True)
+        assert open('sample-pdf-file.pdf', 'rb').read() == actual_result.get_payload(decode=True)
 
     def test__read_content(self):
         """
@@ -68,9 +65,7 @@ class TestEmailWithAttachments:
         """
 
         # if content source is string (path to file)
-        actual_result = email_sender._read_content(
-            source='/home/sergey/PycharmProjects/Blog_FastAPI/blog/tests/avatar.png',
-            type_media=True)
+        actual_result = email_sender._read_content(source='avatar.png', type_media=True)
         assert isinstance(actual_result, bytes)
 
         # if content source is bytes (file itself in bytes format)
@@ -103,11 +98,7 @@ class TestEmailWithAttachments:
         Testing sending email using SMTP library as a core.
         """
 
-        sender = EmailWithAttachments(
-            send_from='example@example.com',
-            host='localhost',
-            password='password'
-        )
+        sender = EmailWithAttachments(send_from='example@example.com', host='localhost', password='password')
 
         # simulate that method `sendmail` could not transmit message
         mock_smtp_ssl.return_value.__enter__.return_value.sendmail.return_value = {
@@ -116,15 +107,15 @@ class TestEmailWithAttachments:
 
         with pytest.raises(smtplib.SMTPResponseException) as exc:
             sender.send_mail(
-                send_to='example2@example.com',
-                subject='Test',
-                content=EmailContent(plain_text='Some plain text')
+                send_to='example2@example.com', subject='Test', content=EmailContent(plain_text='Some plain text')
             )
 
         assert exc.type == smtplib.SMTPResponseException
         assert exc.value.args[0] == 550
-        assert exc.value.args[1] == ('Check your email `example@example.com` for accuracy. '
-                                     'Probably you made typo mistake or provided wrong address.')
+        assert exc.value.args[1] == (
+            'Check your email `example@example.com` for accuracy. '
+            'Probably you made typo mistake or provided wrong address.'
+        )
 
         assert mock_smtp_ssl.return_value.__enter__.return_value.sendmail.call_count == 1
 
@@ -132,9 +123,7 @@ class TestEmailWithAttachments:
         mock_smtp_ssl.return_value.__enter__.return_value.sendmail.return_value = None
 
         actual_result = sender.send_mail(
-            send_to='example2@example.com',
-            subject='Test',
-            content=EmailContent(plain_text='Some plain text')
+            send_to='example2@example.com', subject='Test', content=EmailContent(plain_text='Some plain text')
         )
 
         assert mock_smtp_ssl.return_value.__enter__.return_value.sendmail.call_count == 2
@@ -158,12 +147,9 @@ class TestEmailWithAttachments:
         assert actual_result['html'].as_string() == MIMEText(_text=self.html_doc, _subtype='html').as_string()
 
         # add image content
-        with open('/home/sergey/PycharmProjects/Blog_FastAPI/blog/tests/avatar.png', 'rb') as image:
-            email_content = EmailContent(image_name='/home/sergey/PycharmProjects/Blog_FastAPI/blog/tests/avatar.png')
+        with open('avatar.png', 'rb') as image:
+            email_content = EmailContent(image_name='avatar.png')
             actual_result = email_sender._compose_email_attachments(email_content)
             expected_result = MIMEImage(image.read())
-            expected_result.add_header(
-                'Content-Disposition',
-                'attachment; filename=avatar.png'
-            )
+            expected_result.add_header('Content-Disposition', 'attachment; filename=avatar.png')
         assert actual_result['image'].as_bytes() == expected_result.as_bytes()

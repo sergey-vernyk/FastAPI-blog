@@ -1,15 +1,15 @@
 import secrets
 from datetime import datetime, timedelta
-from typing import Union, Annotated
+from typing import Annotated, Union
 
 import bcrypt
+from accounts.auth.schemas import TokenData
+from config import get_settings
 from fastapi import HTTPException, status
 from fastapi.param_functions import Form
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt
-
-from accounts.auth.schemas import TokenData
-from config import get_settings
+from pytz import utc
 
 DEFAULT_ACCESS_SCOPES = (
     'me:read me:update me:delete '
@@ -40,9 +40,9 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
     """
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(tz=utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(tz=utc) + timedelta(minutes=15)
     to_encode.update({'exp': expire})
     encoded_jwt = jwt.encode(claims=to_encode, key=settings.secret_key, algorithm=settings.algorithm)
     return encoded_jwt

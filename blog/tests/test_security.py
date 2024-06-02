@@ -1,22 +1,19 @@
 from datetime import datetime, timedelta
 
 import pytest
-from fastapi import HTTPException, status
-from jose import jwt
-from pytest import raises
-from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from accounts.auth.schemas import TokenData
 from accounts.models import User
 from accounts.utils import LimitedLifeTokenGenerator
-from common.security import (
-    create_access_token,
-    verify_password_or_exception,
-    get_token_data,
-    get_password_hash
-)
+from common.security import (create_access_token, get_password_hash,
+                             get_token_data, verify_password_or_exception)
 from config import get_settings
+from fastapi import HTTPException, status
+from jose import jwt
+from pytest import raises
+from pytz import utc
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from .conftest import USER_DATA
 
 settings = get_settings()
@@ -58,18 +55,16 @@ def test_create_access_token(create_multiple_users: list[User]) -> None:
     """
     Test create access JWT token with scopes and verify its expiry date.
     """
-    data = {
-        'sub': create_multiple_users[0].username,
-        'scopes': ['scope:read', 'scope:write', 'scope:delete']
-    }
+    data = {'sub': create_multiple_users[0].username, 'scopes': ['scope:read', 'scope:write', 'scope:delete']}
     # pass timedelta into token data
     token = create_access_token(data, timedelta(minutes=5))
     decoded_token = jwt.decode(token, key=settings.secret_key, algorithms=[settings.algorithm])
     assert decoded_token['sub'] == create_multiple_users[0].username
     assert decoded_token['scopes'] == data['scopes']
     # check whether access token has not expired
-    assert datetime.fromtimestamp(decoded_token['exp']) - datetime.now() <= timedelta(
-        minutes=5), 'Token have already expired'
+    assert datetime.fromtimestamp(decoded_token['exp'], tz=utc) - datetime.now(tz=utc) <= timedelta(
+        minutes=5
+    ), 'Token have already expired'
 
 
 def test_create_access_token_if_not_passed_expire_time(create_multiple_users: list[User]) -> None:
@@ -77,10 +72,7 @@ def test_create_access_token_if_not_passed_expire_time(create_multiple_users: li
     Test create access JWT token with scopes and verify its expiry date,
     if there was not passed expire time for the token.
     """
-    data = {
-        'sub': create_multiple_users[0].username,
-        'scopes': ['scope:read', 'scope:write', 'scope:delete']
-    }
+    data = {'sub': create_multiple_users[0].username, 'scopes': ['scope:read', 'scope:write', 'scope:delete']}
     # pass timedelta into token data
     token = create_access_token(data)
     decoded_token = jwt.decode(token, key=settings.secret_key, algorithms=[settings.algorithm])
@@ -88,15 +80,15 @@ def test_create_access_token_if_not_passed_expire_time(create_multiple_users: li
     assert decoded_token['scopes'] == data['scopes']
     # check whether access token has not expired
     assert datetime.fromtimestamp(decoded_token['exp']) - datetime.now() <= timedelta(
-        minutes=15), 'Token have already expired'
+        minutes=15
+    ), 'Token have already expired'
 
 
 class TestLimitedLifeTokenGenerator:
 
     def setup_method(self) -> None:
         self.token_generator = LimitedLifeTokenGenerator(
-            secret_key=settings.secret_key_token_generator,
-            token_expired_timeout=10
+            secret_key=settings.secret_key_token_generator, token_expired_timeout=10
         )
 
     def test_make_token(self, user_for_token) -> None:
@@ -126,9 +118,7 @@ class TestLimitedLifeTokenGenerator:
         token = self.token_generator.make_token(user_for_token)
         new_password = get_password_hash('new_strong_password')
         await db.execute(
-            update(User.__table__)
-            .where(User.id == user_for_token.id)
-            .values(**{'hashed_password': new_password})
+            update(User.__table__).where(User.id == user_for_token.id).values(**{'hashed_password': new_password})
         )
         await db.commit()
         await db.refresh(user_for_token)

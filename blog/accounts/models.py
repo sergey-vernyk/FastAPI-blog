@@ -64,7 +64,7 @@ class User(Base):
     dislikes = relationship('Comment', secondary=dislikes_table, viewonly=True, lazy='selectin')
     comments = relationship('Comment', back_populates='owner', lazy='selectin')
     last_login = Column('last_login', DateTime(timezone=True), nullable=True)
-    date_joined = Column('date_joined', DateTime(timezone=True), default=datetime.utcnow(), nullable=False)
+    date_joined = Column('date_joined', DateTime(timezone=True), default=datetime.now(), nullable=False)
     rating = Column('rating', Integer, default=0)
     about = Column('about', Text, nullable=True)
     social_media_links = Column('social_media_links', ARRAY(String(2083)), default=[], nullable=True)

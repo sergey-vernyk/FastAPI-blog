@@ -1,19 +1,15 @@
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 from typing import Annotated
-
-from fastapi import Depends, APIRouter, status
-from fastapi.responses import UJSONResponse
 
 from accounts.models import User
 from common.crud_operations import CrudManagerAsync
-from common.security import (
-    OAuthFormWithDefaultScopes,
-    verify_password_or_exception,
-    create_access_token,
-    generate_csrf_token
-)
-from common.utils import show_exception, create_cookie, delete_cookie
-from dependencies import DatabaseDependency, ProjSettingsDependency, SecurityScopesDependency
+from common.security import (OAuthFormWithDefaultScopes, create_access_token,
+                             generate_csrf_token, verify_password_or_exception)
+from common.utils import create_cookie, delete_cookie, show_exception
+from dependencies import (DatabaseDependency, ProjSettingsDependency,
+                          SecurityScopesDependency)
+from fastapi import APIRouter, Depends, status
+from fastapi.responses import UJSONResponse
 from loggers.logs_config import set_endpoint_logger
 
 router = APIRouter()
@@ -53,7 +49,7 @@ async def login_for_token(login_data: Annotated[OAuthFormWithDefaultScopes, Depe
         status_code=status.HTTP_200_OK
     )
 
-    await crud_manager.partial_update(user, {'last_login': datetime.utcnow()})
+    await crud_manager.partial_update(user, {'last_login': datetime.now()})
     # generate csrf token and set it in cookies
     csrf_token = generate_csrf_token(n_bytes=64)
     create_cookie(response, key='csrftoken', value=csrf_token)

@@ -12,10 +12,10 @@ async def test_login_with_token_success(client: AsyncClient, create_multiple_use
     """
     Test get access token with scope.
     """
-    user_for_token = create_multiple_users[0]
+    user_with_token = create_multiple_users[0]
 
     form_data = {
-        'username': user_for_token.username,
+        'username': user_with_token.username,
         'password': 'password1',
         'scope': 'posts:read'
     }
@@ -32,7 +32,7 @@ async def test_login_with_token_success(client: AsyncClient, create_multiple_use
     assert response_data['token_type'] == 'bearer'
     # check data from token (scopes and username)
     token_data = get_token_data(response_data['access_token'])
-    assert token_data.username == user_for_token.username
+    assert token_data.username == user_with_token.username
     assert token_data.scopes == [form_data['scope']]
     assert len(response.cookies) > 0, 'Must available cookies'
     assert 'csrftoken' in response.cookies, 'Must be csrftoken in the cookies'
