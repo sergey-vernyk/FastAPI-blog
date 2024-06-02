@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-aiohttp = "3.9.1"
+aiohttp = "3.9.4"
 aiomcache = "0.8.1"
 aioredis = "1.3.1"
 aiosignal = "1.3.1"
