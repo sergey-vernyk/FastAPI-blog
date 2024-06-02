@@ -19,15 +19,11 @@ profile:
 #      - <path/where/not/run/inspection>
 
 #Execute shell command before Qodana execution (Applied in CI/CD pipeline)
-bootstrap: |
-  python -m pip install --upgrade pip
-  python -m pip install poetry
-  cd blog
-  poetry install --no-root
+#bootstrap: |
 
 #Install IDE plugins before Qodana execution (Applied in CI/CD pipeline)
 #plugins:
 #  - id: <plugin.id> #(plugin id can be found at https://plugins.jetbrains.com)
 
 #Specify Qodana linter for analysis (Applied in CI/CD pipeline)
-linter: jetbrains/qodana-python:latest
+linter: jetbrains/qodana-python-community:latest
