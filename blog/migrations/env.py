@@ -1,9 +1,7 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 from blog.config import get_settings
 
@@ -26,7 +24,7 @@ from db_connection import Base
 
 target_metadata = Base.metadata
 from accounts.models import User
-from posts.models import Post, Category, Comment
+from posts.models import Category, Comment, Post
 
 # target_metadata = None
 

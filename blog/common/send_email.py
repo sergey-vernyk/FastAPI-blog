@@ -4,11 +4,10 @@ from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Sequence, Literal, AnyStr, NamedTuple
-
-from jinja2 import FileSystemLoader, Environment
+from typing import Literal, NamedTuple, Sequence
 
 from config import get_settings
+from jinja2 import Environment, FileSystemLoader
 from settings.env_dirs import TEMPLATES_DIR_PATH
 
 settings = get_settings()
@@ -34,8 +33,8 @@ class EmailContent(NamedTuple):
     Content for email body.
     """
 
-    plain_text: AnyStr | None = None
-    html_name: AnyStr | None = None
+    plain_text: str | bytes | None = None
+    html_name: str | bytes | None = None
     file_name: str | None = None
     image_name: str | None = None
 
@@ -69,7 +68,9 @@ class EmailWithAttachments:
         self._attachments_data = dict.fromkeys(['file', 'plain_text', 'html', 'image'], None)
 
     def _create_mimetype_document(
-        self, doc_type: Literal['plain_text', 'html', 'file', 'image'], content: AnyStr
+        self,
+        doc_type: Literal[Literal['plain_text'], Literal['html'], Literal['file'], Literal['image']],
+        content: str | bytes,
     ) -> MIMEText | MIMEImage | MIMEApplication:
         """
         Returns MIME `doc_type` document created with `content`.
@@ -80,7 +81,7 @@ class EmailWithAttachments:
 
         return self.mime_types[doc_type](content)
 
-    def _read_content(self, source: AnyStr, type_media: bool = False) -> str | FileNotFoundError | TypeError:
+    def _read_content(self, source: str | bytes, type_media: bool = False) -> str:
         """
         Read content from `source` taking in account its type.
         - `type_media` flag to recognize file type from passed `source` - media or text (False -> text),
