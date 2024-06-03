@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Union
 
-from sqlalchemy import select, update, delete
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
-
 from common.security import get_password_hash
 from common.tasks import invalidate_endpoint_cache
+from sqlalchemy import delete, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 
 class CrudManagerAbstract(ABC):
@@ -18,18 +17,23 @@ class CrudManagerAbstract(ABC):
     * destroy - DELETE.
     """
 
-    @abstractmethod
-    def __init__(self, db: Union[Session, AsyncSession], model_class, *args, **kwargs):
+    def __init__(self, db: Union[Session, AsyncSession], model_class, *args, **kwargs) -> None:
         self._session = db
         self._model_class = model_class
-        raise NotImplementedError('Method `__init__` is not implemented in the child class.')
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'Model: {self._model_class}, session: {self._session.bind.engine}'
 
     @abstractmethod
-    async def retrieve(self, criterion: Union[tuple, None] = None, many: bool = False,
-                       skip: int = 0, limit: int = 100, order_by: str = 'id', **kwargs):
+    async def retrieve(
+        self,
+        criterion: Union[tuple, None] = None,
+        many: bool = False,
+        skip: int = 0,
+        limit: int = 100,
+        order_by: str = 'id',
+        **kwargs,
+    ):
         """
         Performs `get` request.
         * criterion - criterion to filter (where) records in output,
@@ -83,16 +87,28 @@ class CrudManagerAbstract(ABC):
 class CrudManager(CrudManagerAbstract):
 
     def __init__(self, db: Session, model_class) -> None:
-        self._session = db
-        self._model_class = model_class
+        super().__init__(db, model_class)
 
-    async def retrieve(self, criterion: Union[tuple, None] = None, many: bool = False,
-                       skip: int = 0, limit: int = 100, order_by: str = 'id', **kwargs):
+    async def retrieve(
+        self,
+        criterion: Union[tuple, None] = None,
+        many: bool = False,
+        skip: int = 0,
+        limit: int = 100,
+        order_by: str = 'id',
+        **kwargs,
+    ):
         if many and not criterion:
             return self._session.query(self._model_class).order_by(order_by).offset(skip).limit(limit).all()
         if many and criterion:
-            return self._session.query(self._model_class).filter(
-                criterion).order_by(order_by).offset(skip).limit(limit).all()
+            return (
+                self._session.query(self._model_class)
+                .filter(criterion)
+                .order_by(order_by)
+                .offset(skip)
+                .limit(limit)
+                .all()
+            )
 
         # if needed single record
         return self._session.query(self._model_class).filter(criterion).first()
@@ -151,11 +167,17 @@ class CrudManager(CrudManagerAbstract):
 class CrudManagerAsync(CrudManagerAbstract):
 
     def __init__(self, db: AsyncSession, model_class) -> None:
-        self._session = db
-        self._model_class = model_class
+        super().__init__(db, model_class)
 
-    async def retrieve(self, criterion: Union[tuple, None] = None, many: bool = False,
-                       skip: int = 0, limit: int = 100, order_by: str = 'id', **kwargs):
+    async def retrieve(
+        self,
+        criterion: Union[tuple, None] = None,
+        many: bool = False,
+        skip: int = 0,
+        limit: int = 100,
+        order_by: str = 'id',
+        **kwargs,
+    ):
         if many and not criterion:
             statement = select(self._model_class).order_by(order_by).offset(skip).limit(limit)
         elif many and criterion:
@@ -169,9 +191,7 @@ class CrudManagerAsync(CrudManagerAbstract):
 
     async def update(self, instance, data_to_update: dict, *args, **kwargs):
         statement = (
-            update(self._model_class.__table__)
-            .where(self._model_class.id == instance.id)
-            .values(**data_to_update)
+            update(self._model_class.__table__).where(self._model_class.id == instance.id).values(**data_to_update)
         )
         await self._session.execute(statement)
         await self._session.commit()
@@ -185,9 +205,7 @@ class CrudManagerAsync(CrudManagerAbstract):
             data_to_update.pop('password')
 
         statement = (
-            update(self._model_class.__table__)
-            .where(self._model_class.id == instance.id)
-            .values(**data_to_update)
+            update(self._model_class.__table__).where(self._model_class.id == instance.id).values(**data_to_update)
         )
         await self._session.execute(statement)
         await self._session.commit()

@@ -1,22 +1,21 @@
 from secrets import compare_digest
 from typing import Annotated, Type
 
-from fastapi import Depends, HTTPException, Security, Cookie, Header, status
-from fastapi.security import OAuth2PasswordBearer, SecurityScopes
-from jose import JWTError, jwt
-from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from accounts import models
 from accounts.auth.schemas import TokenData
 from common.crud_operations import CrudManagerAsync
 from config import Settings, get_settings
 from db_connection import SessionAsyncLocal
+from fastapi import Cookie, Depends, Header, HTTPException, Security, status
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+from jose import JWTError, jwt
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 settings = get_settings()
 # for authentication using Bearer Token obtained with a password
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f'/api/v{settings.api_version}/users/login_with_token',
+    tokenUrl=f'/api/v{settings.api_version}/auth/login_with_token',
     scheme_name='JWT',
     scopes={
         'post:create': 'Write a new post',
